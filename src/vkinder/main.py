@@ -1,18 +1,15 @@
-import os
 from random import randrange
 
-import dotenv
 import vk_api
 from vk_api.longpoll import VkEventType
 from vk_api.longpoll import VkLongPoll
 
+from vkinder.config import Config
+
 
 def main():
-    dotenv.load_dotenv()
-
-    token = os.environ['TOKEN']
-
-    vk = vk_api.VkApi(token=token)
+    config = Config()
+    vk = vk_api.VkApi(token=config.vk_token)
     longpoll = VkLongPoll(vk)
 
 
