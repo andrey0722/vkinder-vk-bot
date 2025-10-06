@@ -1,8 +1,27 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "vkinder-vk-bot"
 version = "0.0.1"
+authors = [
+    {name = "andrey0722"},
+    {name = "endless-0x01"},
+    {name = "VladPrickly"},
+]
+description = "Бот VK для продвинутого поиска страниц пользователей."
+readme = "README.md"
+license = "MIT"
 requires-python = ">= 3.12"
 dependencies = [
-    "dotenv",
-    "vk_api",
+    "dotenv>=0.9.9",
+    "vk-api>=11.10.0",
 ]
+
+[project.scripts]
+vkinder = "vkinder.main:main"
+
+[tool.setuptools]
+packages = ["vkinder"]
+package-dir = {"" = "src"}
