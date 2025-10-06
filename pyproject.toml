@@ -15,6 +15,7 @@ readme = "README.md"
 license = "MIT"
 requires-python = ">= 3.12"
 dependencies = [
+    "coloredlogs>=15.0.1",
     "pydantic-settings>=2.11.0",
     "vk-api>=11.10.0",
 ]
