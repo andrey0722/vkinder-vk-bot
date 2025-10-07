@@ -1,6 +1,13 @@
+"""This module defines infrastructure for application logging."""
+
 import json
 import logging
 import logging.config
+import traceback
+
+import pygments
+from pygments.formatters import TerminalFormatter
+from pygments.lexers.python import PythonTracebackLexer
 
 CONFIG_PATH = 'logging.json'
 
@@ -37,3 +44,19 @@ def _get_logger_name(obj: object) -> str:
         obj = type(obj)
     # Use fully-qualified name with module path
     return f'{obj.__module__}.{obj.__qualname__}'
+
+
+def get_colored_traceback() -> str:
+    """Returns a colored and formatted exception traceback.
+
+    Returns:
+        str: Traceback text.
+    """
+    # Plain traceback text
+    traceback_text = traceback.format_exc()
+    # Color it
+    return pygments.highlight(
+        traceback_text,
+        PythonTracebackLexer(),
+        TerminalFormatter(),
+    )

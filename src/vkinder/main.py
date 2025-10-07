@@ -1,22 +1,28 @@
-from typing import cast
+"""Application entry point."""
 
-from vkinder.config import Config
+import sys
+
+from vkinder.application import Application
+from vkinder.application import ApplicationError
+from vkinder.log import get_colored_traceback
 from vkinder.log import get_logger
 from vkinder.log import setup_loging
-from vkinder.vk import Vk
 
 
 def main():
+    """Initialize the bot and run it."""
     setup_loging()
     logger = get_logger(main)
-
-    logger.info('Started')
-
-    config = Config()
-    vk = Vk(config.vk_token)
-
-    for event in vk.listen_messages():
-        vk.send(f'Test: {event.text}', cast(int, event.user_id))
+    logger.info('Application started')
+    try:
+        app = Application()
+        app.run()
+    except KeyboardInterrupt:
+        logger.info('Stopped by keyboard interrupt')
+    except ApplicationError as e:
+        logger.critical('Stopped on error: %s', e)
+        logger.debug('Exception info:\n%s', get_colored_traceback())
+        sys.exit(1)
 
 
 if __name__ == '__main__':
