@@ -3,7 +3,9 @@
 import json
 import logging
 import logging.config
+import re
 import traceback
+from typing import override
 
 import pygments
 from pygments.formatters import TerminalFormatter
@@ -60,3 +62,16 @@ def get_colored_traceback() -> str:
         PythonTracebackLexer(),
         TerminalFormatter(),
     )
+
+
+class TermEscapeCodeFormatter(logging.Formatter):
+    """A class to strip the escape codes from the log record."""
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.pattern = re.compile(r'\x1b\[[0-9;]*m')
+
+    @override
+    def format(self, record):
+        text = super().format(record)
+        return re.sub(self.pattern, "", text)

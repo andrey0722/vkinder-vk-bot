@@ -5,7 +5,21 @@
         "colored": {
             "()": "coloredlogs.ColoredFormatter",
             "fmt": "[%(asctime)s] %(name)s %(levelname)s: %(message)s",
-            "datefmt": "%Y-%m-%dT%H:%M:%S%z"
+            "datefmt": "%Y-%m-%d %H:%M:%S",
+            "field_styles": {
+                "asctime": { "color": "green" },
+                "hostname": { "color": "magenta" },
+                "levelname": { "bold": true, "color": "black" },
+                "name": { "color": "blue" },
+                "programname": { "color": "cyan" },
+                "funcName": { "color": "cyan" },
+                "username": { "color": "yellow" }
+            }
+        },
+        "file": {
+            "()": "vkinder.log.TermEscapeCodeFormatter",
+            "format": "%(asctime)s \u2502 %(levelname)-8s \u2502 %(name)s \u2502 %(funcName)s:%(lineno)d \u2502 %(message)s",
+            "datefmt": "%Y-%m-%d %H:%M:%S"
         }
     },
     "handlers": {
@@ -14,12 +28,22 @@
             "formatter": "colored",
             "level": "DEBUG",
             "stream": "ext://sys.stdout"
+        },
+        "file": {
+            "class": "logging.handlers.RotatingFileHandler",
+            "formatter": "file",
+            "level": "DEBUG",
+            "maxBytes": 10485760,
+            "backupCount": 1,
+            "errors": "replace",
+            "encoding": "utf-8",
+            "filename": "vkinder.log"
         }
     },
     "loggers": {
         "root": {
             "level": "DEBUG",
-            "handlers": ["stdout"]
+            "handlers": ["stdout", "file"]
         }
     }
 }

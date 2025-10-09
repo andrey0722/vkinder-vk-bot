@@ -24,5 +24,8 @@ class Config(BaseSettings):
         extra='ignore',
     )
 
-    vk_token: str = 'vk1.a.VK_EXAMPLE_TOKEN'
+    vk_community_token: str = 'vk1.a.VK_EXAMPLE_TOKEN'
     """VK community access token."""
+
+    vk_user_token: str = 'vk1.a.VK_EXAMPLE_TOKEN'
+    """VK user access token."""
