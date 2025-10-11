@@ -64,6 +64,36 @@ def get_colored_traceback() -> str:
     )
 
 
+class LogLevelLimitFilter(logging.Filter):
+    """Reduces log level of all log records to a specified level.
+
+    This filter helps to avoid flooding with logs on high log level.
+    Every log record log level is reduced to the specified target value,
+    if the level drops below logger effective level, the record is discarded.
+    """
+
+    def __init__(self, logger: logging.Logger, level: int) -> None:
+        """Initialize filer object.
+
+        Args:
+            logger (Logger): A logger to measure effective log level.
+            level (int): Target log level for limit.
+        """
+        super().__init__()
+        self.logger = logger
+        self.level = level
+
+    @override
+    def filter(self, record: logging.LogRecord) -> bool:
+        if self.logger.getEffectiveLevel() > self.level:
+            # Discard record when log level is above
+            return False
+        # Reduce record log level
+        record.levelno = self.level
+        record.levelname = logging.getLevelName(self.level)
+        return True
+
+
 class TermEscapeCodeFormatter(logging.Formatter):
     """A class to strip the escape codes from the log record."""
 

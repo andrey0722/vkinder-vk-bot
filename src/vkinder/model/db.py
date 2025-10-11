@@ -13,6 +13,7 @@ from ..config import DatabaseConfig
 from ..log import get_logger
 from .exceptions import DatabaseError
 from .exceptions import UserNotFoundError
+from .log import set_sqlalchemy_debug_filter
 from .types import ModelBaseType
 from .types import User
 from .types import UserState
@@ -298,7 +299,9 @@ class Database:
         Returns:
             Engine: DB engine object.
         """
-        return sa.create_engine(self._create_dsn(config), echo='debug')
+        engine = sa.create_engine(self._create_dsn(config))
+        set_sqlalchemy_debug_filter(engine)
+        return engine
 
     def _create_session_factory(self) -> OrmSessionFactory:
         """Internal helper that creates and returns ORM session factory.
