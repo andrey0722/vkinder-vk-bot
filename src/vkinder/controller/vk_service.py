@@ -10,33 +10,34 @@ from vk_api.longpoll import Event
 from vk_api.longpoll import VkEventType
 from vk_api.longpoll import VkLongPoll
 
-from vkinder.log import get_logger
+from ..config import VkConfig
+from ..exceptions import VkinderError
+from ..log import get_logger
 
 type VkObject = dict[str, Any]
 
 
-class VkError(Exception):
+class VkServiceError(VkinderError):
     """Error when using VK API."""
 
 
-class Vk:
+class VkService:
     """Implements VK API interactions."""
 
-    def __init__(self, community_token: str, user_token: str) -> None:
-        """Initialize vk object.
+    def __init__(self, config: VkConfig) -> None:
+        """Initialize VK service object.
 
         Args:
-            community_token (str): VK community access token.
-            user_token (str): VK community access token.
+            config (VkConfig): VK service config.
 
         Raises:
-            VkError: Error while creating vk object.
+            VkServiceError: Error while creating VK service object.
         """
         self._logger = get_logger(self)
-        self._vk = self._create_vk(community_token)
-        self._vk_user = self._create_vk(user_token)
+        self._vk = self._create_vk(config.vk_community_token)
+        self._vk_user = self._create_vk(config.vk_user_token)
         self._longpoll = self._create_longpoll()
-        self._logger.info("Бот успешно инициализирован")
+        self._logger.info('VK service is initialized')
 
     def listen(self) -> Iterator[Event]:
         return self._log_events(self._listen())
@@ -56,7 +57,7 @@ class Vk:
                 },
             )
         except vk_api.VkApiError as e:
-            raise VkError(e) from e
+            raise VkServiceError(e) from e
 
     def send_start_keyboard(self, user_id):
         self._logger.debug(f"Отправка клавиатуры пользователю {user_id}")
@@ -233,7 +234,7 @@ class Vk:
             token (str): VK API access token.
 
         Raises:
-            VkError: Error while creating VK API object.
+            VkServiceError: Error while creating VK API object.
 
         Returns:
             VkApi: VK API object.
@@ -241,13 +242,13 @@ class Vk:
         try:
             return vk_api.VkApi(token=token)
         except vk_api.exceptions.VkApiError as e:
-            raise VkError(e) from e
+            raise VkServiceError(e) from e
 
     def _create_longpoll(self) -> VkLongPoll:
         """Internal helper to create VK longpoll object.
 
         Raises:
-            VkError: Error while creating VK longpoll object.
+            VkServiceError: Error while creating VK longpoll object.
 
         Returns:
             VkApi: VK longpoll object.
@@ -255,13 +256,13 @@ class Vk:
         try:
             return VkLongPoll(self._vk)
         except vk_api.exceptions.VkApiError as e:
-            raise VkError(e) from e
+            raise VkServiceError(e) from e
 
     def _listen(self) -> Iterator[Event]:
         try:
             yield from self._longpoll.listen()
         except vk_api.exceptions.VkApiError as e:
-            raise VkError(e) from e
+            raise VkServiceError(e) from e
 
     def _log_events(self, events: Iterator[Event]) -> Iterator[Event]:
         return map(self._log_event, events)
@@ -278,7 +279,7 @@ class Vk:
             event (Event): VK event object.
 
         Returns:
-            bool: `True` if event is a receive message event,
+            bool: `True` if event is a received message event,
                 otherwise `False`.
         """
         return event.type == VkEventType.MESSAGE_NEW and event.to_me

@@ -8,7 +8,7 @@
             "name": "(vkinder) Main",
             "type": "debugpy",
             "request": "launch",
-            "program": "${workspaceFolder}${/}src${/}vkinder${/}main.py",
+            "program": "${workspaceFolder}${/}src${/}main.py",
         },
         {
             "name": "(vkinder) Current file",

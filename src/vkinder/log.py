@@ -68,6 +68,7 @@ class TermEscapeCodeFormatter(logging.Formatter):
     """A class to strip the escape codes from the log record."""
 
     def __init__(self, *args, **kwargs):
+        """Initialize formatter object."""
         super().__init__(*args, **kwargs)
         self.pattern = re.compile(r'\x1b\[[0-9;]*m')
 

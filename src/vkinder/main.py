@@ -2,11 +2,11 @@
 
 import sys
 
-from vkinder.application import Application
-from vkinder.application import ApplicationError
-from vkinder.log import get_colored_traceback
-from vkinder.log import get_logger
-from vkinder.log import setup_loging
+from .application import Application
+from .exceptions import VkinderError
+from .log import get_colored_traceback
+from .log import get_logger
+from .log import setup_loging
 
 
 def main():
@@ -19,7 +19,7 @@ def main():
         app.run()
     except KeyboardInterrupt:
         logger.info('Stopped by keyboard interrupt')
-    except ApplicationError as e:
+    except VkinderError as e:
         logger.critical('Stopped on error: %s', e)
         logger.debug('Exception info:\n%s', get_colored_traceback())
         sys.exit(1)
