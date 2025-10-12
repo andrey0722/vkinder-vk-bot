@@ -1,21 +1,27 @@
 """This module implements main logic of the bot and message handling."""
 
-from typing import cast
+from collections.abc import Callable
+from collections.abc import Iterator
+from typing import Final, cast
 
-from vkinder import view
 from vkinder.config import VkConfig
 from vkinder.log import get_logger
 from vkinder.model import Database
 from vkinder.model import DatabaseSession
 from vkinder.shared_types import InputMessage
+from vkinder.shared_types import OutputMessage
 from vkinder.shared_types import User
-from vkinder.view.strings import MainMenu
-from vkinder.view.strings import SearchMenu
+from vkinder.view.strings import Command
 
 from .states.state_manager import StateManager
 from .vk_service import Event
 from .vk_service import VkService
 from .vk_service import VkServiceError
+
+type MessageHandler = Callable[
+    [DatabaseSession, InputMessage],
+    Iterator[OutputMessage],
+]
 
 
 class Controller:
@@ -33,70 +39,48 @@ class Controller:
         self._vk = VkService(vk_config)
         self._state_manager = StateManager(self._vk)
 
+        self._COMMAND_MAP: Final[dict[Command, MessageHandler]] = {
+            Command.START: self._state_manager.start_main_menu,
+        }
+        self._DEFAULT_HANDLER: Final = self._state_manager.respond
+
     def start_message_loop(self) -> None:
         """Process all incoming messages and keep running until stopped."""
         for message in self._vk.listen_messages():
             self.handle_message(message)
 
-    def handle_message(self, event: Event):
-        """Обработка входящего сообщения"""
+    def handle_message(self, event: Event) -> None:
+        """Process incoming message event and send response to user.
+
+        Args:
+            event (Event): VK message event.
+        """
         user_id = cast(int, event.user_id)
-        text = event.text.lower().strip()
+        text = event.text
         vk = self._vk
 
-        self._logger.info('Сообщение от user_id=%d: "%s"', user_id, text)
+        self._logger.info('Handling message from user %d: [%s]', user_id, text)
 
+        handler = self._get_command_handler(text)
         with self._db.create_session() as session:
             message = self._event_to_message(session, event)
 
-        user = message.user
+            # Send all messages from handler to the user
+            for output_message in handler(session, message):
+                try:
+                    vk.send(output_message)
+                except VkServiceError:
+                    self._logger.error(
+                        'Error when sending message to user %d',
+                        user_id,
+                    )
 
-        # Обработка команд
-        try:
-            if text in ["начать", "привет", "start"]:
-                vk.send_start_keyboard(user_id)
-
-            elif text == view.MainMenu.SEARCH:
-                vk.send_message(user_id, self.format_search_profile(user_id))
-                vk.keyboard_dating(user_id)
-
-            elif text == SearchMenu.NEXT:
-                vk.send_message(user_id, self.format_search_profile(user_id))
-
-            elif text == SearchMenu.GO_BACK:
-                vk.send_start_keyboard(user_id)
-
-            elif text == MainMenu.PROFILE:
-                view.format_your_profile(user)
-                vk.send_message(user_id, self.format_user_profile(user_id))
-                vk.send_start_keyboard(user_id)
-
-            elif text == MainMenu.HELP:
-                help_text = """
-                Доступные команды:
-                🔍 Поиск - поиск анкет
-                👤 Профиль - твоя анкета
-                ❓ Помощь - это сообщение
-                """
-                vk.send_message(user_id, help_text.strip())
-                vk.send_start_keyboard(user_id)
-
-            else:
-                vk.send_message(user_id, view.Strings.UNKNOWN_COMMAND)
-        except VkServiceError:
-            self._logger.error(
-                'Error when handling message user_id:%d',
-                user_id,
-            )
-
-
-    def format_user_profile(self, user_id: int):
-        user = self._vk.get_user_profile(user_id)
-        return view.format_your_profile(user)
-
-    def format_search_profile(self, user_id: int):
-        user = self._vk.search_user_by_parameters(user_id)
-        return view.format_search_profile(user)
+    def _get_command_handler(self, text: str) -> MessageHandler:
+        text = text.lower().strip()
+        for command in Command:
+            if text in command:
+                return self._COMMAND_MAP[command]
+        return self._DEFAULT_HANDLER
 
     def _event_to_message(
         self,

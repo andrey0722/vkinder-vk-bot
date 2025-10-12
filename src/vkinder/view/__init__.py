@@ -32,6 +32,19 @@ class Message:
         return Message._create_message(user, Strings.UNKNOWN_COMMAND)
 
     @staticmethod
+    def greet_new_user(user: User) -> OutputMessage:
+        """Send greeting text for a new user.
+
+        Args:
+            user (User): User object.
+
+        Returns:
+            OutputMessage: Bot output message.
+        """
+        text = Strings.GREETING_NEW_USER.format(name=_get_user_name(user))
+        return Message._create_message(user, text)
+
+    @staticmethod
     def main_menu_help(user: User) -> OutputMessage:
         """Show main menu help text to the user.
 
@@ -90,7 +103,8 @@ class Message:
         Returns:
             OutputMessage: Bot output message.
         """
-        return Message._create_message(user, format_search_profile(profile))
+        text = _format_profile(profile, heading=Strings.HEADING_USER_PROFILE)
+        return Message._create_message(user, text)
 
     @staticmethod
     def your_profile(user: User) -> OutputMessage:
@@ -102,7 +116,8 @@ class Message:
         Returns:
             OutputMessage: Bot output message.
         """
-        return Message._create_message(user, format_your_profile(user))
+        text = _format_profile(user, heading=Strings.HEADING_YOUR_PROFILE)
+        return Message._create_message(user, text)
 
     @staticmethod
     def _create_message(user: User, text: str) -> OutputMessage:
@@ -118,23 +133,32 @@ class Message:
         return OutputMessage(
             user=user,
             text=text,
-            keyboard=get_keyboard(user.state),
+            keyboard=_get_keyboard(user.state),
         )
 
 
-def format_your_profile(user: User | None) -> str:
-    if not user:
-        return Strings.PROFILE_FAILED
-    return _format_profile(user, heading=Strings.HEADING_YOUR_PROFILE)
+def _get_user_name(user: User) -> str:
+    """Returns display name string for user profile.
 
+    Args:
+        user (User): User object.
 
-def format_search_profile(user: User | None) -> str:
-    if not user:
-        return Strings.SEARCH_FAILED
-    return _format_profile(user, heading=Strings.HEADING_USER_PROFILE)
+    Returns:
+        str: User display name string.
+    """
+    return user.first_name or Strings.USER_NAME_TEMPLATE.format(id=user.id)
 
 
 def _format_profile(user: User, *, heading: str) -> str:
+    """Formats user profile to string using template.
+
+    Args:
+        user (User): User object.
+        heading (str): Heading string.
+
+    Returns:
+        str: Formatted user profile.
+    """
     return Strings.USER_PROFILE_TEMPLATE.format(
         heading=heading,
         first_name=user.first_name or Strings.NOT_SPECIFIED,
@@ -174,7 +198,7 @@ _USER_STATE_KEYBOARDS: Final[dict[UserState, Keyboard]] = {
 """Bot keyboard for each user state."""
 
 
-def get_keyboard(state: UserState) -> Keyboard | None:
+def _get_keyboard(state: UserState) -> Keyboard | None:
     """Get bot keyboard for a particular user state.
 
     Args:

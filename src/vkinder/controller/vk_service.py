@@ -2,7 +2,6 @@
 
 from collections.abc import Iterator
 import enum
-import json
 import random
 from typing import Any, Final
 
@@ -21,9 +20,6 @@ from vkinder.shared_types import OutputMessage
 from vkinder.shared_types import Sex
 from vkinder.shared_types import TextAction
 from vkinder.shared_types import User
-from vkinder.view.strings import MainMenu
-from vkinder.view.strings import SearchMenu
-from vkinder.view.strings import Strings
 
 type VkObject = dict[str, Any]
 
@@ -70,126 +66,40 @@ class VkService:
         """
         return self._log_events(filter(self._is_message_event, self._listen()))
 
-    def send(self, user_id: int, message: OutputMessage) -> None:
+    def send(self, message: OutputMessage) -> None:
+        """Send a message from bot to user.
+
+        Args:
+            message (OutputMessage): Output message.
+
+        Raises:
+            VkServiceError: Error when using VK API.
+        """
         text = message.text
         keyboard = message.keyboard
-        self._logger.info('Sending to user %s: %s', user_id, text)
-        self._logger.info('Keyboard to user %s: %r', user_id, keyboard)
+        user_id = message.user.id
+        self._logger.info('Sending to user %d: %s', user_id, text)
+
+        vk_keyboard = _convert_keyboard(keyboard)
+        self._logger.info('Keyboard for user %d: %r', user_id, vk_keyboard)
+
         try:
             self._vk.method(
                 'messages.send',
                 {
                     'user_id': user_id,
                     'message': text,
-                    'keyboard': _convert_keyboard(keyboard),
+                    'keyboard': vk_keyboard,
                     'random_id': _get_random_id(),
                 },
             )
         except vk_api.VkApiError as e:
+            self._logger.error(
+                'Failed to send message to user %d: %s',
+                user_id,
+                e,
+            )
             raise VkServiceError(e) from e
-
-    def send_message(
-        self,
-        user_id: int,
-        message: str,
-        *,
-        keyboard: VkObject | None = None,
-    ) -> None:
-        self._logger.info('Sending to user %s: %s', user_id, message)
-
-        params = {
-            'user_id': user_id,
-            'message': message,
-            'random_id': _get_random_id(),
-        }
-        if keyboard is not None:
-            params['keyboard'] = json.dumps(keyboard)
-
-        try:
-            self._vk.method('messages.send', params)
-        except vk_api.VkApiError as e:
-            raise VkServiceError(e) from e
-
-    def send_start_keyboard(self, user_id: int) -> None:
-        self._logger.debug("Отправка клавиатуры пользователю %d", user_id)
-        keyboard = {
-            "one_time": False,
-            "buttons": [
-                [
-                    {
-                        "action": {
-                            "type": "text",
-                            "label": MainMenu.SEARCH,
-                        },
-                        "color": "primary",
-                    },
-                    {
-                        "action": {
-                            "type": "text",
-                            "label": MainMenu.PROFILE,
-                        },
-                        "color": "secondary",
-                    },
-                ],
-                [
-                    {
-                        "action": {
-                            "type": "text",
-                            "label": MainMenu.HELP,
-                        },
-                        "color": "secondary",
-                    },
-                ],
-            ],
-        }
-
-        self.send_message(user_id, Strings.SELECT_ACTION, keyboard=keyboard)
-        self._logger.info(
-            'Клавиатура отправлена пользователю user_id=%d',
-            user_id,
-        )
-
-    def keyboard_dating(self, user_id):
-        self._logger.debug(
-            'Отправка клавиатуры знакомств пользователю %d',
-            user_id,
-        )
-        keyboard = {
-            "one_time": False,
-            "buttons": [
-                [
-                    {
-                        "action": {
-                            "type": "text",
-                            "label": SearchMenu.NEXT,
-                        },
-                        "color": "primary",
-                    },
-                    {
-                        "action": {
-                            "type": "text",
-                            "label": SearchMenu.ADD_FAVORITE,
-                        },
-                        "color": "secondary",
-                    },
-                ],
-                [
-                    {
-                        "action": {
-                            "type": "text",
-                            "label": SearchMenu.GO_BACK,
-                        },
-                        "color": "secondary",
-                    },
-                ],
-            ],
-        }
-
-        self.send_message(user_id, Strings.SELECT_ACTION, keyboard=keyboard)
-        self._logger.info(
-            'Клавиатура отправлена пользователю user_id=%d',
-            user_id,
-        )
 
     def search_user_by_parameters(self, user_id: int) -> User | None:
         current_user = self.get_user_profile(user_id)
@@ -205,7 +115,7 @@ class VkService:
             self._logger.debug('Не удалось определить пол, поиск отменяется')
             return None
 
-        sex = 1 if user_sex == 2 else 2
+        sex = VkSex.FEMALE if user_sex == Sex.MALE else VkSex.MALE
 
         try:
             result = self._vk_user.method(

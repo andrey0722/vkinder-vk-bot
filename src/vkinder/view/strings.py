@@ -6,6 +6,12 @@ from typing import Final
 from vkinder.shared_types import Sex
 
 
+class Command(tuple[str, ...], enum.ReprEnum):
+    """Bot commands with a special actions."""
+
+    START = ('начать', 'привет', 'start', '/start')
+
+
 @enum.unique
 class MainMenu(enum.StrEnum):
     """Commands in main menu."""
@@ -34,6 +40,7 @@ class SearchMenu(enum.StrEnum):
 class Strings(enum.StrEnum):
     """Messages from the bot to a user."""
 
+    GREETING_NEW_USER = '🎉🎉🎉 Добро пожаловать, {name}! 🎉🎉🎉'
     UNKNOWN_COMMAND = f'Не понял команду. Нажми {MainMenu.HELP}'
     SELECT_ACTION = 'Выбери действие:'
     SEARCH_FAILED = (
@@ -49,6 +56,8 @@ class Strings(enum.StrEnum):
     HEADING_YOUR_PROFILE = 'Твоя анкета: '
 
     SEPARATOR = '─' * 20
+
+    USER_NAME_TEMPLATE = 'id{id}'
 
     USER_PROFILE_TEMPLATE = (
         '{heading}\n'
