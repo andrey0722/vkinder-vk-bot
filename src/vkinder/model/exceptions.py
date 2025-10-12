@@ -1,9 +1,8 @@
 """This module defines all model exceptions."""
 
-
 from typing import TYPE_CHECKING
 
-from ..exceptions import VkinderError
+from vkinder.exceptions import VkinderError
 
 if TYPE_CHECKING:
     from .types import User

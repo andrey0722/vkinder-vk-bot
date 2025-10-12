@@ -4,8 +4,8 @@ import logging
 
 import sqlalchemy.log
 
-from ..log import LogLevelLimitFilter
-from ..log import get_logger
+from vkinder.log import LogLevelLimitFilter
+from vkinder.log import get_logger
 
 
 def set_sqlalchemy_debug_filter(obj: sqlalchemy.log.Identified) -> None:

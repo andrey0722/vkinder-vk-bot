@@ -4,11 +4,11 @@ This module defines the main class of the entire application and
 all connections between program components.
 """
 
-from .config import DatabaseConfig
-from .config import VkConfig
-from .controller import Controller
-from .log import get_logger
-from .model.db import Database
+from vkinder.config import DatabaseConfig
+from vkinder.config import VkConfig
+from vkinder.controller import Controller
+from vkinder.log import get_logger
+from vkinder.model import Database
 
 
 class Application:
@@ -25,8 +25,8 @@ class Application:
         self._logger.info('Starting the bot')
         try:
             self._controller.start_message_loop()
-        except Exception:
-            self._logger.critical('Bot running error')
+        except Exception as e:
+            self._logger.critical('Bot running error: %s', e)
             raise
 
     def _read_vk_config(self) -> VkConfig:

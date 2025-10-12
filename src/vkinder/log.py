@@ -105,4 +105,4 @@ class TermEscapeCodeFormatter(logging.Formatter):
     @override
     def format(self, record):
         text = super().format(record)
-        return re.sub(self.pattern, "", text)
+        return re.sub(self.pattern, '', text)

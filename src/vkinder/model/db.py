@@ -9,8 +9,9 @@ import sqlalchemy as sa
 from sqlalchemy import exc
 from sqlalchemy import orm
 
-from ..config import DatabaseConfig
-from ..log import get_logger
+from vkinder.config import DatabaseConfig
+from vkinder.log import get_logger
+
 from .exceptions import DatabaseError
 from .exceptions import UserNotFoundError
 from .log import set_sqlalchemy_debug_filter
@@ -53,7 +54,12 @@ class DatabaseSession(contextlib.AbstractContextManager):
         Returns:
             SessionTransaction: Transaction context manager.
         """
-        return self._session.begin()
+        try:
+            return self._session.begin()
+        except exc.SQLAlchemyError as e:
+            me = _create_db_error(e)
+            self._logger.error('Begin transaction block error: %s', e)
+            raise me from e
 
     def commit(self) -> None:
         """Saves pending changes into the DB.

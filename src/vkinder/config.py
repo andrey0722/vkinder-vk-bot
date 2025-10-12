@@ -9,8 +9,8 @@ from pydantic import ValidationError
 from pydantic_settings import BaseSettings
 from pydantic_settings import SettingsConfigDict
 
-from .exceptions import VkinderError
-from .log import get_logger
+from vkinder.exceptions import VkinderError
+from vkinder.log import get_logger
 
 
 class ConfigError(VkinderError):

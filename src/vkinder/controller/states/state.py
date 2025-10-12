@@ -1,15 +1,17 @@
-"""This module defines base class of the bot state."""
+"""This module defines base class of the bot states."""
 
 import abc
+from collections.abc import Iterator
 from typing import TYPE_CHECKING
 
-from ..log import get_logger
-from ..model.db import DatabaseSession
-from ..model.types import InputMessage
-from ..view import OutputMessage
-from .vk_service import VkService
+from vkinder.log import get_logger
+from vkinder.model.db import DatabaseSession
+from vkinder.shared_types import InputMessage
+from vkinder.shared_types import OutputMessage
 
 if TYPE_CHECKING:
+    from vkinder.controller import VkService
+
     from .state_manager import StateManager
 
 
@@ -31,7 +33,7 @@ class State(abc.ABC):
         self._logger = get_logger(self)
 
     @property
-    def vk(self) -> VkService:
+    def vk(self) -> 'VkService':
         """Returns VK service object for the state.
 
         Returns:
@@ -44,7 +46,7 @@ class State(abc.ABC):
         self,
         session: DatabaseSession,
         message: InputMessage,
-    ) -> OutputMessage:
+    ) -> Iterator[OutputMessage]:
         """Start performing actions related to this bot state.
 
         Args:
@@ -52,5 +54,21 @@ class State(abc.ABC):
             message (InputMessage): A message from user.
 
         Returns:
-            OutputMessage: Bot response to the user.
+            Iterator[OutputMessage]: Bot responses to the user.
+        """
+
+    @abc.abstractmethod
+    def respond(
+        self,
+        session: DatabaseSession,
+        message: InputMessage,
+    ) -> Iterator[OutputMessage]:
+        """Reply to user input according to current bot state.
+
+        Args:
+            session (DatabaseSession): Session object.
+            message (InputMessage): A message from user.
+
+        Returns:
+            Iterator[OutputMessage]: Bot responses to the user.
         """
