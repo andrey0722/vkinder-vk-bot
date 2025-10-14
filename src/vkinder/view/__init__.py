@@ -11,6 +11,7 @@ from vkinder.shared_types import TextAction
 from vkinder.shared_types import User
 from vkinder.shared_types import UserState
 
+from .strings import BOOL_MAP
 from .strings import SEX_MAP
 from .strings import MainMenu
 from .strings import SearchMenu
@@ -191,9 +192,12 @@ def _format_profile(user: User, *, heading: str) -> str:
         heading=heading,
         first_name=user.first_name or Strings.NOT_SPECIFIED,
         last_name=user.last_name or Strings.NOT_SPECIFIED,
+        nickname=user.nickname or Strings.NOT_SPECIFIED,
         sex=SEX_MAP[user.sex],
         birthday=user.birthday or Strings.NOT_SPECIFIED,
         city=user.city or Strings.NOT_SPECIFIED,
+        url=user.url,
+        online=BOOL_MAP[user.online],
     )
 
 

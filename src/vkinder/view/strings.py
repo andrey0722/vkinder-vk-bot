@@ -51,7 +51,7 @@ class Strings(enum.StrEnum):
         'Повторите попытку позднее.'
     )
     PROFILE_FAILED = '😔 Не удалось получить данные твоего профиля.'
-    NOT_SPECIFIED = 'Не указан'
+    NOT_SPECIFIED = 'Не указано'
     PHOTO_URLS_FAILED = '😔 Ссылки на фото недоступны'
     HEADING_USER_PROFILE = 'Анекта пользователя: '
     HEADING_YOUR_PROFILE = 'Твоя анкета: '
@@ -73,9 +73,12 @@ class Strings(enum.StrEnum):
         f'{SEPARATOR}\n'
         'Имя: {first_name}\n'
         'Фамилия: {last_name}\n'
+        'Ник: {nickname}\n'
         'Пол: {sex}\n'
         'Дата рождения: {birthday}\n'
         'Город: {city}\n'
+        'Ссылка: {url}\n'
+        'Сейчас в сети: {online}\n'
     )
 
     MAIN_MENU_HELP = (
@@ -83,6 +86,12 @@ class Strings(enum.StrEnum):
         f'{SEPARATOR}\n'
         f'{'\n'.join(f'{k} - {v}' for k, v in MAIN_HELP_MAP.items())}'
     )
+
+
+BOOL_MAP: Final[dict[bool, str]] = {
+    False: 'Нет',
+    True: 'Да',
+}
 
 
 SEX_MAP: Final[dict[Sex, str]] = {

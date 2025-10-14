@@ -8,9 +8,9 @@ from vkinder.config import VkConfig
 from vkinder.log import get_logger
 from vkinder.model import Database
 from vkinder.model import DatabaseSession
+from vkinder.model import ModelError
 from vkinder.shared_types import InputMessage
 from vkinder.shared_types import OutputMessage
-from vkinder.shared_types import User
 from vkinder.view.strings import Command
 
 from .states.state_manager import StateManager
@@ -47,7 +47,13 @@ class Controller:
     def start_message_loop(self) -> None:
         """Process all incoming messages and keep running until stopped."""
         for message in self._vk.listen_messages():
-            self.handle_message(message)
+            try:
+                self.handle_message(message)
+            except (ModelError, VkServiceError):
+                self._logger.error(
+                    'Failed to handle message from %d',
+                    message.user_id,
+                )
 
     def handle_message(self, event: Event) -> None:
         """Process incoming message event and send response to user.
@@ -98,7 +104,5 @@ class Controller:
         """
         user_id = cast(int, event.user_id)
         user = self._vk.get_user_profile(user_id)
-        if user is None:
-            user = User(user_id)
         user = session.add_or_update_user(user)
         return InputMessage(user, event.text)

@@ -1,5 +1,6 @@
 """This module defines basic types that stores application data."""
 
+import dataclasses
 import enum
 
 import sqlalchemy as sa
@@ -37,38 +38,34 @@ class User(ModelBaseType):
     id: Mapped[int] = orm.mapped_column(primary_key=True)
     """User unique VK ID value."""
 
-    first_name: Mapped[str | None] = orm.mapped_column(
-        sa.String(64),
-        default=None,
-    )
+    first_name: Mapped[str] = orm.mapped_column(sa.String(64))
     """User first name."""
 
-    last_name: Mapped[str | None] = orm.mapped_column(
-        sa.String(64),
-        default=None,
-    )
+    last_name: Mapped[str] = orm.mapped_column(sa.String(64))
     """User last name."""
 
     sex: Mapped[Sex] = orm.mapped_column(
         sa.Enum(Sex, name='sex', metadata=ModelBaseType.metadata),
-        default=Sex.NOT_KNOWN,
     )
     """User specified sex."""
 
-    birthday: Mapped[str | None] = orm.mapped_column(
-        sa.String(10),
-        default=None,
-    )
+    birthday: Mapped[str | None] = orm.mapped_column(sa.String(10))
     """User specified birthday."""
 
-    city_id: Mapped[str | None] = orm.mapped_column(default=None)
+    city_id: Mapped[int | None] = orm.mapped_column()
     """User specified city ID."""
 
-    city: Mapped[str | None] = orm.mapped_column(
-        sa.String(64),
-        default=None,
-    )
+    city: Mapped[str | None] = orm.mapped_column(sa.String(64))
     """User specified city."""
+
+    nickname: Mapped[str | None] = orm.mapped_column(sa.String(64))
+    """User nickname if any."""
+
+    url: Mapped[str] = orm.mapped_column(sa.String(64))
+    """Short link to user profile page."""
+
+    online: bool = dataclasses.field(default=False)
+    """Whether user is online right now or not."""
 
     state: Mapped[UserState] = orm.mapped_column(
         sa.Enum(UserState, name='userstate', metadata=ModelBaseType.metadata),

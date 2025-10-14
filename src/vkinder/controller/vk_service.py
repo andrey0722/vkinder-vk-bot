@@ -37,6 +37,45 @@ class VkHasItems[T](VkHasCount):
     items: list[T]
 
 
+class VkDeactivatedReason(enum.StrEnum):
+    """Reason why user profile is deactivated."""
+
+    DELETED = 'deleted'
+    BANNED = 'banned'
+
+
+class VkCity(TypedDict):
+    """VK user city descriptor."""
+
+    id: int
+    title: str
+
+
+class VkSex(enum.IntEnum):
+    """Sex designator in VK notation."""
+
+    NOT_SPECIFIED = 0
+    FEMALE = 1
+    MALE = 2
+
+
+class VkUser(TypedDict):
+    """VK user profile descriptor."""
+
+    id: int
+    first_name: str
+    last_name: str
+    deactivated: NotRequired[VkDeactivatedReason]
+    is_closed: bool
+    can_access_closed: bool
+    bdate: NotRequired[str]
+    city: NotRequired[VkCity]
+    domain: NotRequired[str]
+    nickname: NotRequired[str]
+    online: NotRequired[int]
+    sex: NotRequired[VkSex]
+
+
 class VkPhotoType(enum.StrEnum):
     """VK photo type designator."""
 
@@ -119,6 +158,10 @@ class VkPhotoEx(VkPhoto):
     reposts: VkHasCount
 
 
+type VkUsersGetResult = list[VkUser]
+"""VK response object for 'users.get' API method."""
+
+
 class VkPhotosGetResult(VkHasItems[VkPhoto]):
     """VK response object for 'photos.get' API method."""
 
@@ -128,11 +171,23 @@ class VkPhotosGetExResult(VkHasItems[VkPhotoEx]):
 
 
 class VkServiceError(VkinderError):
+    """Error when using VK service."""
+
+
+class VkApiError(VkServiceError):
     """Error when using VK API."""
 
 
-class MissingUserIdError(VkServiceError):
-    """No user id is specified."""
+class VkUserNotFoundError(VkServiceError):
+    """Failed to get user profile by user id."""
+
+    def __init__(self, user_id: int) -> None:
+        """Initialize an exception object.
+
+        Args:
+            user_id (int): User id.
+        """
+        super().__init__(user_id)
 
 
 class VkService:
@@ -173,7 +228,7 @@ class VkService:
             message (OutputMessage): Output message.
 
         Raises:
-            VkServiceError: Error when using VK API.
+            VkApiError: Error when using VK API.
         """
         text = message.text
         keyboard = message.keyboard
@@ -199,12 +254,12 @@ class VkService:
                 user_id,
                 e,
             )
-            raise VkServiceError(e) from e
+            raise VkApiError(e) from e
 
     def search_user_by_parameters(self, user_id: int) -> User | None:
-        current_user = self.get_user_profile(user_id)
-
-        if not current_user:
+        try:
+            current_user = self.get_user_profile(user_id)
+        except VkUserNotFoundError:
             self._logger.warning('Не удалось найти пользователя с id=%d', user_id)
             return None
 
@@ -226,41 +281,58 @@ class VkService:
                     "has_photo": 1,
                     "online": 1,
                     "sex": sex,
-                    'fields' : 'sex, city, bdate',
+                    'fields': _REQUEST_USER_FIELDS,
                 },
             )
         except vk_api.exceptions.VkApiError as e:
             self._logger.error('User search error: %s', e)
-            raise VkServiceError(e) from e
+            raise VkApiError(e) from e
 
         if users := result.get('items', []):
             return _convert_user(users[0])
         self._logger.warning('Не найдено пользователей по критериям поиска')
         return None
 
-    def get_user_profile(self, user_id: int) -> User | None:
+    def get_user_profile(self, user_id: int) -> User:
+        """Extract user profile by their profile id.
+
+        Args:
+            user_id (int): User profile id.
+
+        Raises:
+            VkApiError: Error when using VK API.
+            VkUserNotFoundError: No user profile for this user id.
+
+        Returns:
+            User: User object.
+        """
         self._logger.debug('Extracting user profile for id=%d', user_id)
         try:
-            users: list[VkObject] = self._vk.method(
-                "users.get",
+            response = self._vk.method(
+                'users.get',
                 {
-                    "user_ids": user_id,
-                    "fields": "first_name, last_name, sex, bdate, city",
+                    'user_ids': user_id,
+                    'fields': _REQUEST_USER_FIELDS,
                 },
             )
         except vk_api.exceptions.VkApiError as e:
             self._logger.error(
-                'Error when extracting user profile for id=%d: %s',
+                'Error when extracting user profile %d: %s',
                 user_id,
                 e,
             )
-            return None
+            raise VkApiError(e) from e
 
-        if not users:
-            self._logger.debug('No user profile for id=%d', user_id)
-            return None
+        # Use type checker for VK API response
+        users = cast(VkUsersGetResult, response)
 
-        self._logger.info('Extracted user profile for id=%d', user_id)
+        try:
+            user = users[0]
+        except IndexError as e:
+            self._logger.error('No user profile %d', user_id)
+            raise VkUserNotFoundError(user_id) from e
+
+        self._logger.info('Extracted user profile %d', user_id)
         user = _convert_user(users[0])
         self._logger.debug('Extracted user: %r', user)
         return user
@@ -282,7 +354,7 @@ class VkService:
                 photos if specified. Defaults to `None`.
 
         Raises:
-            VkServiceError: Error when using VK API.
+            VkApiError: Error when using VK API.
 
         Returns:
             list[Photo]: User profile protos.
@@ -299,7 +371,7 @@ class VkService:
             )
         except vk_api.exceptions.VkApiError as e:
             self._logger.error('Get photo for user %d: %s', user_id, e)
-            raise VkServiceError(e) from e
+            raise VkApiError(e) from e
 
         # Use type checker for VK API response
         response = cast(VkPhotosGetExResult, response)
@@ -311,7 +383,7 @@ class VkService:
         for photo in photos:
             number_of_likes = photo['likes']['count']
             photo_id = photo['id']
-            orig_photo = self._get_photo_source(photo)
+            orig_photo = _get_photo_source(photo)
             result.append(Photo(photo_id, number_of_likes, orig_photo['url']))
 
         # Postprocess result list
@@ -328,7 +400,7 @@ class VkService:
             token (str): VK API access token.
 
         Raises:
-            VkServiceError: Error while creating VK API object.
+            VkApiError: Error while creating VK API object.
 
         Returns:
             VkApi: VK API object.
@@ -337,13 +409,13 @@ class VkService:
             return vk_api.VkApi(token=token)
         except vk_api.exceptions.VkApiError as e:
             self._logger.critical('Failed to connect to VK API: %s', e)
-            raise VkServiceError(e) from e
+            raise VkApiError(e) from e
 
     def _create_longpoll(self) -> VkLongPoll:
         """Internal helper to create VK longpoll object.
 
         Raises:
-            VkServiceError: Error while creating VK longpoll object.
+            VkApiError: Error while creating VK longpoll object.
 
         Returns:
             VkApi: VK longpoll object.
@@ -352,14 +424,14 @@ class VkService:
             return VkLongPoll(self._vk)
         except vk_api.exceptions.VkApiError as e:
             self._logger.critical('Failed to connect to VK longpoll: %s', e)
-            raise VkServiceError(e) from e
+            raise VkApiError(e) from e
 
     def _listen(self) -> Iterator[Event]:
         try:
             yield from self._longpoll.listen()
         except vk_api.exceptions.VkApiError as e:
             self._logger.critical('VK listen error: %s', e)
-            raise VkServiceError(e) from e
+            raise VkApiError(e) from e
 
     def _log_events(self, events: Iterator[Event]) -> Iterator[Event]:
         return map(self._log_event, events)
@@ -385,29 +457,6 @@ class VkService:
         """
         return event.type == VkEventType.MESSAGE_NEW and event.to_me
 
-    @staticmethod
-    def _get_photo_source(photo: VkPhoto) -> VkPhotoSource:
-        """Internal helper that extracts largest photo from VK API response.
-
-        Args:
-            photo (VkPhoto): Photo descriptor from VK API.
-
-        Returns:
-            VkPhotoSource: Photo source descriptor from VK API.
-        """
-        # Try to use convenience field for original photo (undocumented)
-        orig_photo = photo.get('orig_photo')
-        if orig_photo is not None:
-            return orig_photo
-
-        # Search in 'sizes' for original photo (undocumented)
-        for source in photo['sizes']:
-            if source['type'] == VkPhotoType.ORIGINAL:
-                return source
-
-        # Fallback option: use the photo of most size (pixel count)
-        return max(photo['sizes'], key=lambda x: x['width'] * x['height'])
-
 
 def _get_random_id() -> int:
     """Internal helper that generates random id for message.
@@ -418,13 +467,9 @@ def _get_random_id() -> int:
     return random.randrange(10**7)
 
 
-@enum.unique
-class VkSex(enum.IntEnum):
-    """Sex designator in VK notation."""
-
-    NOT_SPECIFIED = 0
-    FEMALE = 1
-    MALE = 2
+_REQUEST_USER_FIELDS = (
+    'nickname, first_name, last_name, city, sex, bdate, domain, online'
+)
 
 
 _VK_SEX_TO_SEX: dict[VkSex, Sex] = {
@@ -435,11 +480,11 @@ _VK_SEX_TO_SEX: dict[VkSex, Sex] = {
 """VK sex mapping."""
 
 
-def _convert_sex(sex: int | None) -> Sex:
+def _convert_sex(sex: VkSex | None) -> Sex:
     """Convert VK sex notation to standard.
 
     Args:
-        sex (int | None): VK sex.
+        sex (VkSex | None): VK sex.
 
     Returns:
         Sex: Standard sex.
@@ -451,31 +496,29 @@ def _convert_sex(sex: int | None) -> Sex:
     return _VK_SEX_TO_SEX[vk_sex]
 
 
-def _convert_user(data: VkObject) -> User:
+def _convert_user(user: VkUser) -> User:
     """Convert VK user object to `User`.
 
     Args:
-        data (VkObject): VK user object.
-
-    Raises:
-        MissingUserIdError: User id is not specified.
+        user (VkUser): VK user object.
 
     Returns:
-        User: _description_
+        User: User object.
     """
-    try:
-        user_id = data['id']
-    except KeyError as e:
-        raise MissingUserIdError from e
-    city = data.get('city')
+    user_id = user['id']
+    url = user.get('domain') or f'id{user_id}'
+    city = user.get('city')
     return User(
         id=user_id,
-        first_name=data.get('first_name'),
-        last_name=data.get('last_name'),
-        sex=_convert_sex(data.get('sex')),
-        birthday=data.get('bday'),
-        city_id=city and city.get('id'),
-        city=city and city.get('title'),
+        first_name=user['first_name'],
+        last_name=user['last_name'],
+        sex=_convert_sex(user.get('sex')),
+        birthday=user.get('bday'),
+        city_id=city and city['id'],
+        city=city and city['title'],
+        nickname=user.get('nickname'),
+        url=f'https://vk.com/{url}',
+        online=bool(user.get('online')),
     )
 
 
@@ -519,3 +562,26 @@ def _convert_keyboard(keyboard: Keyboard | None) -> str:
             else:
                 raise NotImplementedError
     return vk_kb.get_keyboard()
+
+
+def _get_photo_source(photo: VkPhoto) -> VkPhotoSource:
+    """Internal helper that extracts largest photo from VK API response.
+
+    Args:
+        photo (VkPhoto): Photo descriptor from VK API.
+
+    Returns:
+        VkPhotoSource: Photo source descriptor from VK API.
+    """
+    # Try to use convenience field for original photo (undocumented)
+    orig_photo = photo.get('orig_photo')
+    if orig_photo is not None:
+        return orig_photo
+
+    # Search in 'sizes' for original photo (undocumented)
+    for source in photo['sizes']:
+        if source['type'] == VkPhotoType.ORIGINAL:
+            return source
+
+    # Fallback option: use the photo of most size (pixel count)
+    return max(photo['sizes'], key=lambda x: x['width'] * x['height'])

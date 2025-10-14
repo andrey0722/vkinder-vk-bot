@@ -155,7 +155,10 @@ class DatabaseSession(contextlib.AbstractContextManager):
             session = self._session
             if session.get(User, user.id) is None:
                 raise UserNotFoundError(user)
+            # Preserve user online field
+            online = user.online
             result = session.merge(user)
+            result.online = online
         except exc.SQLAlchemyError as e:
             me = _create_db_error(e)
             self._logger.error('Update error: user=%r, error=%s', user, e)
