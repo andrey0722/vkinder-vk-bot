@@ -52,12 +52,21 @@ class Strings(enum.StrEnum):
     )
     PROFILE_FAILED = '😔 Не удалось получить данные твоего профиля.'
     NOT_SPECIFIED = 'Не указан'
+    PHOTO_URLS_FAILED = '😔 Ссылки на фото недоступны'
     HEADING_USER_PROFILE = 'Анекта пользователя: '
     HEADING_YOUR_PROFILE = 'Твоя анкета: '
 
     SEPARATOR = '─' * 20
 
     USER_NAME_TEMPLATE = 'id{id}'
+
+    PHOTO_URLS_SEPARATOR = f'\n{SEPARATOR}\n'
+
+    PHOTO_URLS_TEMPLATE = (
+        'Ссылки на фото:\n'
+        f'{SEPARATOR}\n'
+        '{urls}'
+    )
 
     USER_PROFILE_TEMPLATE = (
         '{heading}\n'

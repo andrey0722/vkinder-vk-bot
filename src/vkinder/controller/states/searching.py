@@ -33,6 +33,16 @@ class SearchingState(State):
 
         if profile:
             yield Message.search_result(user, profile)
+            try:
+                photos = self.vk.get_user_photos(
+                    profile.id,
+                    sort_by_likes=True,
+                    limit=3,
+                )
+            except VkServiceError:
+                self._logger.warning('Failed to fetch profile photos')
+            else:
+                yield Message.photo_urls(user, photos)
         else:
             yield Message.search_failed(user)
             yield from self._manager.start_main_menu(session, message)

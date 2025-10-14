@@ -6,6 +6,7 @@ from vkinder.shared_types import Button
 from vkinder.shared_types import ButtonColor
 from vkinder.shared_types import Keyboard
 from vkinder.shared_types import OutputMessage
+from vkinder.shared_types import Photo
 from vkinder.shared_types import TextAction
 from vkinder.shared_types import User
 from vkinder.shared_types import UserState
@@ -105,6 +106,33 @@ class Message:
         """
         text = _format_profile(profile, heading=Strings.HEADING_USER_PROFILE)
         return Message._create_message(user, text)
+
+    @staticmethod
+    def photo_urls(user: User, photos: list[Photo]) -> OutputMessage:
+        """Show profile photo URLs to user.
+
+        Args:
+            user (User): User object.
+            photos (User): Profile photo URLs.
+
+        Returns:
+            OutputMessage: Bot output message.
+        """
+        urls = Strings.PHOTO_URLS_SEPARATOR.join(x.url for x in photos)
+        text = Strings.PHOTO_URLS_TEMPLATE.format(urls=urls)
+        return Message._create_message(user, text)
+
+    @staticmethod
+    def photo_failed(user: User) -> OutputMessage:
+        """Could not fetch profile photos.
+
+        Args:
+            user (User): User object.
+
+        Returns:
+            OutputMessage: Bot output message.
+        """
+        return Message._create_message(user, Strings.PHOTO_URLS_FAILED)
 
     @staticmethod
     def your_profile(user: User) -> OutputMessage:

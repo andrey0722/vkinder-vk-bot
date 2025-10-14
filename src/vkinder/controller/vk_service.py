@@ -3,7 +3,7 @@
 from collections.abc import Iterator
 import enum
 import random
-from typing import Any, Final
+from typing import Any, Final, NotRequired, TypedDict, cast
 
 import vk_api
 import vk_api.keyboard
@@ -17,11 +17,114 @@ from vkinder.log import get_logger
 from vkinder.shared_types import ButtonColor
 from vkinder.shared_types import Keyboard
 from vkinder.shared_types import OutputMessage
+from vkinder.shared_types import Photo
 from vkinder.shared_types import Sex
 from vkinder.shared_types import TextAction
 from vkinder.shared_types import User
 
 type VkObject = dict[str, Any]
+
+
+class VkHasCount(TypedDict):
+    """VK object that contains "count" field."""
+
+    count: int
+
+
+class VkHasItems[T](VkHasCount):
+    """VK object that contains "items" field."""
+
+    items: list[T]
+
+
+class VkPhotoType(enum.StrEnum):
+    """VK photo type designator."""
+
+    SCALED_75 = 's'
+    """Scaled image with a maximum side of 75px."""
+
+    SCALED_130 = 'm'
+    """Scaled image with a maximum side of 130px."""
+
+    SCALED_604 = 'x'
+    """Scaled image with a maximum side of 604px."""
+
+    SCALED_807 = 'y'
+    """Scaled image with a maximum side of 807px."""
+
+    SCALED_1080_1024 = 'z'
+    """Scaled image with a maximum size of 1080x1024px."""
+
+    SCALED_2560_2048 = 'w'
+    """Scaled image with a maximum size of 2560x2048px."""
+
+    CROPPED_130 = 'o'
+    """Cropped to ratio 3:2 and scaled image with a maximum side of 130px."""
+
+    CROPPED_200 = 'p'
+    """Cropped to ratio 3:2 and scaled image with a maximum side of 200px."""
+
+    CROPPED_320 = 'q'
+    """Cropped to ratio 3:2 and scaled image with a maximum side of 320px."""
+
+    CROPPED_510 = 'r'
+    """Cropped to ratio 3:2 and scaled image with a maximum side of 510px."""
+
+    ORIGINAL = 'base'
+    """Original photo (undocumented)."""
+
+
+class VkPhotoSource(TypedDict):
+    """VK photo source descriptor."""
+
+    url: str
+    width: int
+    height: int
+    type: VkPhotoType
+
+
+class VkPhoto(TypedDict):
+    """VK photo descriptor."""
+
+    id: int
+    album_id: int
+    owner_id: int
+    user_id: int
+    text: str
+    date: int
+    thumb_hash: str
+    has_tags: bool
+    sizes: list[VkPhotoSource]
+    width: NotRequired[int]
+    height: NotRequired[int]
+
+    orig_photo: NotRequired[VkPhotoSource]
+    """Undocumented convenience field for original photo source."""
+
+
+class VkPhotoLikes(VkHasCount):
+    """VK photo like count descriptor."""
+
+    user_likes: int
+    """Number of likes from a photo owner."""
+
+
+class VkPhotoEx(VkPhoto):
+    """VK photo descriptor with extended=1 in API method call."""
+
+    likes: VkPhotoLikes
+    comments: VkHasCount
+    tags: VkHasCount
+    can_comment: int
+    reposts: VkHasCount
+
+
+class VkPhotosGetResult(VkHasItems[VkPhoto]):
+    """VK response object for 'photos.get' API method."""
+
+
+class VkPhotosGetExResult(VkHasItems[VkPhotoEx]):
+    """VK response object for 'photos.get' API method with extended=1."""
 
 
 class VkServiceError(VkinderError):
@@ -40,9 +143,6 @@ class VkService:
 
         Args:
             config (VkConfig): VK service config.
-
-        Raises:
-            VkServiceError: Error while creating VK service object.
         """
         self._logger = get_logger(self)
         self._vk = self._create_vk(config.vk_community_token)
@@ -165,6 +265,62 @@ class VkService:
         self._logger.debug('Extracted user: %r', user)
         return user
 
+    def get_user_photos(
+        self,
+        user_id: int,
+        *,
+        sort_by_likes: bool = False,
+        limit: int | None = None,
+    ) -> list[Photo]:
+        """Extracts user profile photos with optional sorting.
+
+        Args:
+            user_id (int): User profile id.
+            sort_by_likes (bool, optional): Sort photos by like count in
+                descending order. Defaults to `False`.
+            limit (int | None, optional): Limit result up to `limit`
+                photos if specified. Defaults to `None`.
+
+        Raises:
+            VkServiceError: Error when using VK API.
+
+        Returns:
+            list[Photo]: User profile protos.
+        """
+        try:
+            response = self._vk_user.method(
+                'photos.get',
+                {
+                    'owner_id': user_id,
+                    'album_id': 'profile',
+                    'extended': 1,
+                    'photo_ids': 0,
+                },
+            )
+        except vk_api.exceptions.VkApiError as e:
+            self._logger.error('Get photo for user %d: %s', user_id, e)
+            raise VkServiceError(e) from e
+
+        # Use type checker for VK API response
+        response = cast(VkPhotosGetExResult, response)
+
+        result: list[Photo] = []
+        photos = response['items']
+
+        # Extract all photos from response
+        for photo in photos:
+            number_of_likes = photo['likes']['count']
+            photo_id = photo['id']
+            orig_photo = self._get_photo_source(photo)
+            result.append(Photo(photo_id, number_of_likes, orig_photo['url']))
+
+        # Postprocess result list
+        if sort_by_likes:
+            result = sorted(result, key=lambda x: x.likes, reverse=True)
+        if limit is not None:
+            result = result[:limit]
+        return result
+
     def _create_vk(self, token: str) -> vk_api.VkApi:
         """Internal helper to create VK API object.
 
@@ -228,6 +384,29 @@ class VkService:
                 otherwise `False`.
         """
         return event.type == VkEventType.MESSAGE_NEW and event.to_me
+
+    @staticmethod
+    def _get_photo_source(photo: VkPhoto) -> VkPhotoSource:
+        """Internal helper that extracts largest photo from VK API response.
+
+        Args:
+            photo (VkPhoto): Photo descriptor from VK API.
+
+        Returns:
+            VkPhotoSource: Photo source descriptor from VK API.
+        """
+        # Try to use convenience field for original photo (undocumented)
+        orig_photo = photo.get('orig_photo')
+        if orig_photo is not None:
+            return orig_photo
+
+        # Search in 'sizes' for original photo (undocumented)
+        for source in photo['sizes']:
+            if source['type'] == VkPhotoType.ORIGINAL:
+                return source
+
+        # Fallback option: use the photo of most size (pixel count)
+        return max(photo['sizes'], key=lambda x: x['width'] * x['height'])
 
 
 def _get_random_id() -> int:

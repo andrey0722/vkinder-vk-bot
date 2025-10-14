@@ -13,6 +13,7 @@ __all__ = (
     'Sex',
     'User',
     'UserState',
+    'Photo',
     'Button',
     'ButtonAction',
     'ButtonColor',
@@ -21,6 +22,16 @@ __all__ = (
     'OutputMessage',
     'TextAction',
 )
+
+
+@dataclasses.dataclass
+class Photo:
+    """User photo descriptor."""
+
+    id: int
+    likes: int
+    url: str
+
 
 class ButtonColor(enum.StrEnum):
     """Bot button color."""
