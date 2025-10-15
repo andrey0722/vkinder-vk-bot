@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 from vkinder.log import get_logger
 from vkinder.model.db import DatabaseSession
 from vkinder.shared_types import InputMessage
-from vkinder.shared_types import OutputMessage
+from vkinder.shared_types import Response
 
 if TYPE_CHECKING:
     from vkinder.controller import VkService
@@ -46,7 +46,7 @@ class State(abc.ABC):
         self,
         session: DatabaseSession,
         message: InputMessage,
-    ) -> Iterator[OutputMessage]:
+    ) -> Iterator[Response]:
         """Start performing actions related to this bot state.
 
         Args:
@@ -54,7 +54,7 @@ class State(abc.ABC):
             message (InputMessage): A message from user.
 
         Returns:
-            Iterator[OutputMessage]: Bot responses to the user.
+            Iterator[Response]: Bot responses to the user.
         """
 
     @abc.abstractmethod
@@ -62,7 +62,7 @@ class State(abc.ABC):
         self,
         session: DatabaseSession,
         message: InputMessage,
-    ) -> Iterator[OutputMessage]:
+    ) -> Iterator[Response]:
         """Reply to user input according to current bot state.
 
         Args:
@@ -70,5 +70,5 @@ class State(abc.ABC):
             message (InputMessage): A message from user.
 
         Returns:
-            Iterator[OutputMessage]: Bot responses to the user.
+            Iterator[Response]: Bot responses to the user.
         """

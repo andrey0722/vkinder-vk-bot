@@ -4,12 +4,12 @@ from collections.abc import Iterator
 from typing import override
 
 from vkinder.controller.vk_service import VkServiceError
-from vkinder.model import DatabaseSession
 from vkinder.shared_types import InputMessage
-from vkinder.shared_types import OutputMessage
-from vkinder.view import Message
-from vkinder.view import SearchMenu
+from vkinder.shared_types import Response
+from vkinder.shared_types import ResponseFactory
+from vkinder.shared_types import SearchMenu
 
+from ..db import DatabaseSession
 from .state import State
 
 
@@ -21,18 +21,18 @@ class SearchingState(State):
         self,
         session: DatabaseSession,
         message: InputMessage,
-    ) -> Iterator[OutputMessage]:
+    ) -> Iterator[Response]:
         user = message.user
         self._logger.info('Starting for user %d', user.id)
         try:
             profile = self.vk.search_user_by_parameters(user.id)
         except VkServiceError:
-            yield Message.search_error(user)
+            yield ResponseFactory.search_error()
             yield from self._manager.start_main_menu(session, message)
             return
 
         if profile:
-            yield Message.search_result(user, profile)
+            yield ResponseFactory.search_result(profile)
             try:
                 photos = self.vk.get_user_photos(
                     profile.id,
@@ -41,10 +41,11 @@ class SearchingState(State):
                 )
             except VkServiceError:
                 self._logger.warning('Failed to fetch profile photos')
+                yield ResponseFactory.photo_failed()
             else:
-                yield Message.photo_urls(user, photos)
+                yield ResponseFactory.photo_urls(photos)
         else:
-            yield Message.search_failed(user)
+            yield ResponseFactory.search_failed()
             yield from self._manager.start_main_menu(session, message)
 
     @override
@@ -52,7 +53,7 @@ class SearchingState(State):
         self,
         session: DatabaseSession,
         message: InputMessage,
-    ) -> Iterator[OutputMessage]:
+    ) -> Iterator[Response]:
         user = message.user
         text = message.text
         self._logger.info('User %d selected in search menu: %s', user.id, text)
@@ -70,4 +71,4 @@ class SearchingState(State):
 
             case _:
                 self._logger.warning('Unknown search menu option: %s', text)
-                yield Message.unknown_command(user)
+                yield ResponseFactory.unknown_command()

@@ -5,165 +5,165 @@ from typing import Final
 from vkinder.shared_types import Button
 from vkinder.shared_types import ButtonColor
 from vkinder.shared_types import Keyboard
+from vkinder.shared_types import MainMenu
 from vkinder.shared_types import OutputMessage
-from vkinder.shared_types import Photo
+from vkinder.shared_types import Response
+from vkinder.shared_types import ResponseGeneric
+from vkinder.shared_types import ResponseType
+from vkinder.shared_types import ResponseTypesGeneric
+from vkinder.shared_types import ResponseWithPhotos
+from vkinder.shared_types import ResponseWithUser
+from vkinder.shared_types import SearchMenu
 from vkinder.shared_types import TextAction
 from vkinder.shared_types import User
 from vkinder.shared_types import UserState
 
 from .strings import BOOL_MAP
 from .strings import SEX_MAP
-from .strings import MainMenu
-from .strings import SearchMenu
+from .strings import MainMenuStr
+from .strings import SearchMenuStr
 from .strings import Strings
 
+_STR_TO_MENU_COMMAND: Final[dict[str, str]] = {
+    MainMenuStr.SEARCH: MainMenu.SEARCH,
+    MainMenuStr.PROFILE: MainMenu.PROFILE,
+    MainMenuStr.HELP: MainMenu.HELP,
+    SearchMenuStr.NEXT: SearchMenu.NEXT,
+    SearchMenuStr.ADD_FAVORITE: SearchMenu.ADD_FAVORITE,
+    SearchMenuStr.GO_BACK: SearchMenu.GO_BACK,
+}
 
-class Message:
-    """Creates output messages from templates."""
 
-    @staticmethod
-    def unknown_command(user: User) -> OutputMessage:
-        """The user has input an invalid command.
+def normalize_menu_command(text: str) -> str:
+    """Replace menu item in input message with a command.
 
-        Args:
-            user (User): User object.
+    Args:
+        text (str): User input text message.
 
-        Returns:
-            OutputMessage: Bot output message.
-        """
-        return Message._create_message(user, Strings.UNKNOWN_COMMAND)
+    Returns:
+        str: Normalized text message.
+    """
+    return _STR_TO_MENU_COMMAND.get(text, text)
 
-    @staticmethod
-    def greet_new_user(user: User) -> OutputMessage:
-        """Send greeting text for a new user.
 
-        Args:
-            user (User): User object.
+def render_message(user: User, result: Response) -> OutputMessage:
+    """Render bot response to actual message to send to a user.
 
-        Returns:
-            OutputMessage: Bot output message.
-        """
-        text = Strings.GREETING_NEW_USER.format(name=_get_user_name(user))
-        return Message._create_message(user, text)
+    Args:
+        user (User): User object.
+        result (Response): Bot response object.
 
-    @staticmethod
-    def main_menu_help(user: User) -> OutputMessage:
-        """Show main menu help text to the user.
+    Returns:
+        OutputMessage: Bot output message.
+    """
+    if isinstance(result, ResponseGeneric):
+        return _render_generic(user, result)
+    if isinstance(result, ResponseWithUser):
+        return _render_with_user(user, result)
+    if isinstance(result, ResponseWithPhotos):
+        return _render_with_photos(user, result)
+    raise NotImplementedError
 
-        Args:
-            user (User): User object.
 
-        Returns:
-            OutputMessage: Bot output message.
-        """
-        return Message._create_message(user, Strings.MAIN_MENU_HELP)
+_GENERIC_TO_TEXT: Final[dict[ResponseTypesGeneric, str]] = {
+    ResponseType.UNKNOWN_COMMAND: Strings.UNKNOWN_COMMAND,
+    ResponseType.MAIN_MENU_HELP: Strings.MAIN_MENU_HELP,
+    ResponseType.SELECT_MENU: Strings.SELECT_ACTION,
+    ResponseType.SEARCH_FAILED: Strings.SEARCH_FAILED,
+    ResponseType.SEARCH_ERROR: Strings.SEARCH_ERROR,
+    ResponseType.PHOTO_FAILED: Strings.PHOTO_URLS_FAILED,
+}
 
-    @staticmethod
-    def select_menu(user: User) -> OutputMessage:
-        """Show a prompt to select a menu command to the user.
 
-        Args:
-            user (User): User object.
+def _render_generic(user: User, result: ResponseGeneric) -> OutputMessage:
+    """Internal helper to render messages without parameters.
 
-        Returns:
-            OutputMessage: Bot output message.
-        """
-        return Message._create_message(user, Strings.SELECT_ACTION)
+    Args:
+        user (User): User object.
+        result (ResponseGeneric): Bot response object.
 
-    @staticmethod
-    def search_failed(user: User) -> OutputMessage:
-        """The profile search didn't give any results.
+    Returns:
+        OutputMessage: Bot output message.
+    """
+    try:
+        text = _GENERIC_TO_TEXT[result.type]
+    except KeyError as e:
+        raise NotImplementedError from e
+    return _create_message(user, text)
 
-        Args:
-            user (User): User object.
 
-        Returns:
-            OutputMessage: Bot output message.
-        """
-        return Message._create_message(user, Strings.SEARCH_FAILED)
+def _render_with_user(
+    user: User,
+    result: ResponseWithUser,
+) -> OutputMessage:
+    """Internal helper to render messages with `user` parameter.
 
-    @staticmethod
-    def search_error(user: User) -> OutputMessage:
-        """The profile search interrupted by an error.
+    Args:
+        user (User): User object.
+        result (ResponseWithUser): Bot response object.
 
-        Args:
-            user (User): User object.
+    Returns:
+        OutputMessage: Bot output message.
+    """
+    match result.type:
+        case ResponseType.GREET_NEW_USER:
+            name = _get_user_name(result.user)
+            text = Strings.GREETING_NEW_USER.format(name=name)
+            return _create_message(user, text)
 
-        Returns:
-            OutputMessage: Bot output message.
-        """
-        return Message._create_message(user, Strings.SEARCH_ERROR)
+        case ResponseType.SEARCH_RESULT:
+            profile = result.user
+            heading = Strings.HEADING_USER_PROFILE
+            text = _format_profile(profile, heading=heading)
+            return _create_message(user, text)
 
-    @staticmethod
-    def search_result(user: User, profile: User) -> OutputMessage:
-        """Show found profile to the user.
+        case ResponseType.YOUR_PROFILE:
+            profile = result.user
+            heading = Strings.HEADING_YOUR_PROFILE
+            text = _format_profile(profile, heading=heading)
+            return _create_message(user, text)
 
-        Args:
-            user (User): User object.
-            profile (User): Found user profile.
+    raise NotImplementedError
 
-        Returns:
-            OutputMessage: Bot output message.
-        """
-        text = _format_profile(profile, heading=Strings.HEADING_USER_PROFILE)
-        return Message._create_message(user, text)
 
-    @staticmethod
-    def photo_urls(user: User, photos: list[Photo]) -> OutputMessage:
-        """Show profile photo URLs to user.
+def _render_with_photos(
+    user: User,
+    result: ResponseWithPhotos,
+) -> OutputMessage:
+    """Internal helper to render messages with `photos` parameter.
 
-        Args:
-            user (User): User object.
-            photos (User): Profile photo URLs.
+    Args:
+        user (User): User object.
+        result (ResponseWithPhotos): Bot response object.
 
-        Returns:
-            OutputMessage: Bot output message.
-        """
-        urls = Strings.PHOTO_URLS_SEPARATOR.join(x.url for x in photos)
-        text = Strings.PHOTO_URLS_TEMPLATE.format(urls=urls)
-        return Message._create_message(user, text)
+    Returns:
+        OutputMessage: Bot output message.
+    """
+    match result.type:
+        case ResponseType.PHOTO_URLS:
+            photos = result.photos
+            urls = Strings.PHOTO_URLS_SEPARATOR.join(x.url for x in photos)
+            text = Strings.PHOTO_URLS_TEMPLATE.format(urls=urls)
+            return _create_message(user, text)
 
-    @staticmethod
-    def photo_failed(user: User) -> OutputMessage:
-        """Could not fetch profile photos.
+    raise NotImplementedError
 
-        Args:
-            user (User): User object.
 
-        Returns:
-            OutputMessage: Bot output message.
-        """
-        return Message._create_message(user, Strings.PHOTO_URLS_FAILED)
+def _create_message(user: User, text: str) -> OutputMessage:
+    """Internal helper to construct output message.
 
-    @staticmethod
-    def your_profile(user: User) -> OutputMessage:
-        """Show own profile to the user.
+    Args:
+        user (User): User object.
+        text (str): Output message text.
 
-        Args:
-            user (User): User object.
-
-        Returns:
-            OutputMessage: Bot output message.
-        """
-        text = _format_profile(user, heading=Strings.HEADING_YOUR_PROFILE)
-        return Message._create_message(user, text)
-
-    @staticmethod
-    def _create_message(user: User, text: str) -> OutputMessage:
-        """Internal helper to construct output message.
-
-        Args:
-            user (User): User object.
-            text (str): Output message text.
-
-        Returns:
-            OutputMessage: Bot output message.
-        """
-        return OutputMessage(
-            user=user,
-            text=text,
-            keyboard=_get_keyboard(user.state),
-        )
+    Returns:
+        OutputMessage: Bot output message.
+    """
+    return OutputMessage(
+        user=user,
+        text=text,
+        keyboard=_get_keyboard(user.state),
+    )
 
 
 def _get_user_name(user: User) -> str:
@@ -206,11 +206,11 @@ _USER_STATE_KEYBOARDS: Final[dict[UserState, Keyboard]] = {
         one_time=False,
         button_rows=[
             [
-                Button(TextAction(MainMenu.SEARCH), color=ButtonColor.PRIMARY),
-                Button(TextAction(MainMenu.PROFILE)),
+                Button(TextAction(MainMenuStr.SEARCH), ButtonColor.PRIMARY),
+                Button(TextAction(MainMenuStr.PROFILE)),
             ],
             [
-                Button(TextAction(MainMenu.HELP)),
+                Button(TextAction(MainMenuStr.HELP)),
             ],
         ],
     ),
@@ -218,11 +218,11 @@ _USER_STATE_KEYBOARDS: Final[dict[UserState, Keyboard]] = {
         one_time=False,
         button_rows=[
             [
-                Button(TextAction(SearchMenu.NEXT), color=ButtonColor.PRIMARY),
-                Button(TextAction(SearchMenu.ADD_FAVORITE)),
+                Button(TextAction(SearchMenuStr.NEXT), ButtonColor.PRIMARY),
+                Button(TextAction(SearchMenuStr.ADD_FAVORITE)),
             ],
             [
-                Button(TextAction(SearchMenu.GO_BACK)),
+                Button(TextAction(SearchMenuStr.GO_BACK)),
             ],
         ],
     ),

@@ -3,11 +3,11 @@
 from collections.abc import Iterator
 from typing import override
 
-from vkinder.model import DatabaseSession
 from vkinder.shared_types import InputMessage
-from vkinder.shared_types import OutputMessage
-from vkinder.view import Message
+from vkinder.shared_types import Response
+from vkinder.shared_types import ResponseFactory
 
+from ..db import DatabaseSession
 from .main_menu import MainMenuState
 
 
@@ -19,10 +19,10 @@ class NewUserState(MainMenuState):
         self,
         session: DatabaseSession,
         message: InputMessage,
-    ) -> Iterator[OutputMessage]:
+    ) -> Iterator[Response]:
         user = message.user
         self._logger.info('Starting for user %d', user.id)
-        yield Message.greet_new_user(user)
+        yield ResponseFactory.greet_new_user(user)
         yield from self._manager.start_main_menu(session, message)
 
     @override
@@ -30,5 +30,5 @@ class NewUserState(MainMenuState):
         self,
         session: DatabaseSession,
         message: InputMessage,
-    ) -> Iterator[OutputMessage]:
+    ) -> Iterator[Response]:
         yield from self.start(session, message)

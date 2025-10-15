@@ -9,18 +9,20 @@ from vkinder.log import get_logger
 from vkinder.model import Database
 from vkinder.model import DatabaseSession
 from vkinder.model import ModelError
+from vkinder.model import StateManager
 from vkinder.shared_types import InputMessage
-from vkinder.shared_types import OutputMessage
+from vkinder.shared_types import Response
+from vkinder.view import normalize_menu_command
+from vkinder.view import render_message
 from vkinder.view.strings import Command
 
-from .states.state_manager import StateManager
 from .vk_service import Event
 from .vk_service import VkService
 from .vk_service import VkServiceError
 
 type MessageHandler = Callable[
     [DatabaseSession, InputMessage],
-    Iterator[OutputMessage],
+    Iterator[Response],
 ]
 
 
@@ -72,9 +74,10 @@ class Controller:
             message = self._event_to_message(session, event)
 
             # Send all messages from handler to the user
-            for output_message in handler(session, message):
+            for result in handler(session, message):
+                message = render_message(message.user, result)
                 try:
-                    vk.send(output_message)
+                    vk.send(message)
                 except VkServiceError:
                     self._logger.error(
                         'Error when sending message to user %d',
@@ -105,4 +108,5 @@ class Controller:
         user_id = cast(int, event.user_id)
         user = self._vk.get_user_profile(user_id)
         user = session.add_or_update_user(user)
-        return InputMessage(user, event.text)
+        text = normalize_menu_command(event.text)
+        return InputMessage(user, text)

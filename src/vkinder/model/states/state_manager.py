@@ -3,12 +3,12 @@
 from collections.abc import Iterator
 from typing import TYPE_CHECKING
 
-from vkinder.model import DatabaseSession
-from vkinder.model import User
-from vkinder.model import UserState
 from vkinder.shared_types import InputMessage
-from vkinder.shared_types import OutputMessage
+from vkinder.shared_types import Response
+from vkinder.shared_types import User
+from vkinder.shared_types import UserState
 
+from ..db import DatabaseSession
 from .main_menu import MainMenuState
 from .new_user import NewUserState
 from .searching import SearchingState
@@ -45,7 +45,7 @@ class StateManager:
         session: DatabaseSession,
         message: InputMessage,
         state: UserState,
-    ) -> Iterator[OutputMessage]:
+    ) -> Iterator[Response]:
         """Start a new state for user and respond to them.
 
         Args:
@@ -54,7 +54,7 @@ class StateManager:
             state (UserState): New user state.
 
         Returns:
-            Iterator[OutputMessage]: Bot responses to the user.
+            Iterator[Response]: Bot responses to the user.
         """
         self._update_user_state(session, message.user, state)
         yield from self._states[state].start(session, message)
@@ -63,7 +63,7 @@ class StateManager:
         self,
         session: DatabaseSession,
         message: InputMessage,
-    ) -> Iterator[OutputMessage]:
+    ) -> Iterator[Response]:
         """Convenience method to start main menu state.
 
         Args:
@@ -71,7 +71,7 @@ class StateManager:
             message (InputMessage): A message from user.
 
         Returns:
-            Iterator[OutputMessage]: Bot responses to the user.
+            Iterator[Response]: Bot responses to the user.
         """
         yield from self.start(session, message, UserState.MAIN_MENU)
 
@@ -79,7 +79,7 @@ class StateManager:
         self,
         session: DatabaseSession,
         message: InputMessage,
-    ) -> Iterator[OutputMessage]:
+    ) -> Iterator[Response]:
         """Respond to a user depending on user state.
 
         Args:
@@ -87,7 +87,7 @@ class StateManager:
             message (InputMessage): A message from user.
 
         Returns:
-            Iterator[OutputMessage]: Bot responses to the user.
+            Iterator[Response]: Bot responses to the user.
         """
         state = message.user.state
         yield from self._states[state].respond(session, message)

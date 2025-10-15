@@ -13,7 +13,7 @@ class Command(tuple[str, ...], enum.ReprEnum):
 
 
 @enum.unique
-class MainMenu(enum.StrEnum):
+class MainMenuStr(enum.StrEnum):
     """Commands in main menu."""
 
     SEARCH = '🔍 Поиск'
@@ -21,15 +21,15 @@ class MainMenu(enum.StrEnum):
     HELP = '❓ Помощь'
 
 
-MAIN_HELP_MAP: Final[dict[MainMenu, str]] = {
-    MainMenu.SEARCH: 'поиск анкет',
-    MainMenu.PROFILE: 'твоя анкета',
-    MainMenu.HELP: 'это сообщение',
+MAIN_HELP_MAP: Final[dict[MainMenuStr, str]] = {
+    MainMenuStr.SEARCH: 'поиск анкет',
+    MainMenuStr.PROFILE: 'твоя анкета',
+    MainMenuStr.HELP: 'это сообщение',
 }
 
 
 @enum.unique
-class SearchMenu(enum.StrEnum):
+class SearchMenuStr(enum.StrEnum):
     """Commands in search menu."""
 
     NEXT = '⏭️ Следующая анкета'
@@ -41,7 +41,7 @@ class Strings(enum.StrEnum):
     """Messages from the bot to a user."""
 
     GREETING_NEW_USER = '🎉🎉🎉 Добро пожаловать, {name}! 🎉🎉🎉'
-    UNKNOWN_COMMAND = f'Не понял команду. Нажми {MainMenu.HELP}'
+    UNKNOWN_COMMAND = f'Не понял команду. Нажми {MainMenuStr.HELP}'
     SELECT_ACTION = 'Выбери действие:'
     SEARCH_FAILED = (
         '😔 Не удалось найти подходящих пользователей. Попробуй ещё раз!'
