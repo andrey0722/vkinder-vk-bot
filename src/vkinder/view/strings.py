@@ -60,14 +60,6 @@ class Strings(enum.StrEnum):
 
     USER_NAME_TEMPLATE = 'id{id}'
 
-    PHOTO_URLS_SEPARATOR = f'\n{SEPARATOR}\n'
-
-    PHOTO_URLS_TEMPLATE = (
-        'Ссылки на фото:\n'
-        f'{SEPARATOR}\n'
-        '{urls}'
-    )
-
     USER_PROFILE_TEMPLATE = (
         '{heading}\n'
         f'{SEPARATOR}\n'

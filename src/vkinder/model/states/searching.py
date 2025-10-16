@@ -43,7 +43,7 @@ class SearchingState(State):
                 self._logger.warning('Failed to fetch profile photos')
                 yield ResponseFactory.photo_failed()
             else:
-                yield ResponseFactory.photo_urls(photos)
+                yield ResponseFactory.attach_media(photos)
         else:
             yield ResponseFactory.search_failed()
             yield from self._manager.start_main_menu(session, message)

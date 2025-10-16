@@ -45,13 +45,25 @@ class SearchMenu(enum.StrEnum):
     GO_BACK = enum.auto()
 
 
+class MediaType(enum.StrEnum):
+    """Type of media object."""
+
+    PHOTO = enum.auto()
+
+
 @dataclasses.dataclass
 class Photo:
     """User photo descriptor."""
 
     id: int
+    owner_id: int
     likes: int
     url: str
+
+    type: Literal[MediaType.PHOTO] = MediaType.PHOTO
+
+
+type Media = Photo
 
 
 class ButtonColor(enum.StrEnum):
@@ -114,6 +126,7 @@ class OutputMessage:
     user: User
     text: str
     keyboard: Keyboard | None = None
+    media: list[Media] = dataclasses.field(default_factory=list)
 
 
 class ResponseType(enum.IntEnum):
@@ -140,8 +153,8 @@ class ResponseType(enum.IntEnum):
     SEARCH_RESULT = enum.auto()
     """Show found profile to the user."""
 
-    PHOTO_URLS = enum.auto()
-    """Show profile photo URLs to user."""
+    ATTACH_MEDIA = enum.auto()
+    """Attach media objects to the bot message."""
 
     PHOTO_FAILED = enum.auto()
     """Could not fetch profile photos."""
@@ -184,22 +197,22 @@ class ResponseWithUser:
     user: User
 
 
-type ResponseTypesWithPhotos = Literal[
-    ResponseType.PHOTO_URLS,
+type ResponseTypesWithMedia = Literal[
+    ResponseType.ATTACH_MEDIA,
 ]
-"""All responses supporting `photos` field."""
+"""All responses supporting `media` field."""
 
 
 @dataclasses.dataclass
-class ResponseWithPhotos:
-    """State result with list of photos as parameter."""
+class ResponseWithMedia:
+    """State result with list of media as parameter."""
 
-    type: ResponseTypesWithPhotos
-    photos: list[Photo]
+    type: ResponseTypesWithMedia
+    media: list[Media]
 
 
 type Response = (
-    ResponseGeneric | ResponseWithUser | ResponseWithPhotos
+    ResponseGeneric | ResponseWithUser | ResponseWithMedia
 )
 """Bot response type to user."""
 
@@ -283,18 +296,18 @@ class ResponseFactory:
         )
 
     @staticmethod
-    def photo_urls(photos: list[Photo]) -> Response:
-        """Show profile photo URLs to user.
+    def attach_media(media: list[Media]) -> Response:
+        """Attach media objects to the bot message.
 
         Args:
-            photos (User): Profile photo URLs.
+            media (list[Media]): List of media objects.
 
         Returns:
             Response: Bot response to user.
         """
-        return ResponseWithPhotos(
-            type=ResponseType.PHOTO_URLS,
-            photos=photos,
+        return ResponseWithMedia(
+            type=ResponseType.ATTACH_MEDIA,
+            media=media,
         )
 
     @staticmethod

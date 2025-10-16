@@ -16,6 +16,7 @@ from vkinder.exceptions import VkinderError
 from vkinder.log import get_logger
 from vkinder.shared_types import ButtonColor
 from vkinder.shared_types import Keyboard
+from vkinder.shared_types import Media
 from vkinder.shared_types import OutputMessage
 from vkinder.shared_types import Photo
 from vkinder.shared_types import Sex
@@ -238,6 +239,9 @@ class VkService:
         vk_keyboard = _convert_keyboard(keyboard)
         self._logger.info('Keyboard for user %d: %r', user_id, vk_keyboard)
 
+        attachment = _convert_attachment(message.media)
+        self._logger.info('Attachment for user %d: %r', user_id, attachment)
+
         try:
             self._vk.method(
                 'messages.send',
@@ -245,6 +249,7 @@ class VkService:
                     'user_id': user_id,
                     'message': text,
                     'keyboard': vk_keyboard,
+                    'attachment': attachment,
                     'random_id': _get_random_id(),
                 },
             )
@@ -381,10 +386,15 @@ class VkService:
 
         # Extract all photos from response
         for photo in photos:
-            number_of_likes = photo['likes']['count']
-            photo_id = photo['id']
             orig_photo = _get_photo_source(photo)
-            result.append(Photo(photo_id, number_of_likes, orig_photo['url']))
+            result.append(
+                Photo(
+                    id=photo['id'],
+                    owner_id=photo['owner_id'],
+                    likes=photo['likes']['count'],
+                    url=orig_photo['url'],
+                )
+            )
 
         # Postprocess result list
         if sort_by_likes:
@@ -562,6 +572,18 @@ def _convert_keyboard(keyboard: Keyboard | None) -> str:
             else:
                 raise NotImplementedError
     return vk_kb.get_keyboard()
+
+
+def _convert_attachment(media: list[Media]) -> str:
+    """Internal helper to construct 'attachment' field for VK API call.
+
+    Args:
+        media (list[Media]): List of media objects to attach.
+
+    Returns:
+        str: 'attachment' field for VK API call.
+    """
+    return ','.join(f'{x.type}{x.owner_id}_{x.id}' for x in media)
 
 
 def _get_photo_source(photo: VkPhoto) -> VkPhotoSource:

@@ -6,12 +6,13 @@ from vkinder.shared_types import Button
 from vkinder.shared_types import ButtonColor
 from vkinder.shared_types import Keyboard
 from vkinder.shared_types import MainMenu
+from vkinder.shared_types import Media
 from vkinder.shared_types import OutputMessage
 from vkinder.shared_types import Response
 from vkinder.shared_types import ResponseGeneric
 from vkinder.shared_types import ResponseType
 from vkinder.shared_types import ResponseTypesGeneric
-from vkinder.shared_types import ResponseWithPhotos
+from vkinder.shared_types import ResponseWithMedia
 from vkinder.shared_types import ResponseWithUser
 from vkinder.shared_types import SearchMenu
 from vkinder.shared_types import TextAction
@@ -60,8 +61,8 @@ def render_message(user: User, result: Response) -> OutputMessage:
         return _render_generic(user, result)
     if isinstance(result, ResponseWithUser):
         return _render_with_user(user, result)
-    if isinstance(result, ResponseWithPhotos):
-        return _render_with_photos(user, result)
+    if isinstance(result, ResponseWithMedia):
+        return _render_with_media(user, result)
     raise NotImplementedError
 
 
@@ -126,35 +127,38 @@ def _render_with_user(
     raise NotImplementedError
 
 
-def _render_with_photos(
+def _render_with_media(
     user: User,
-    result: ResponseWithPhotos,
+    result: ResponseWithMedia,
 ) -> OutputMessage:
-    """Internal helper to render messages with `photos` parameter.
+    """Internal helper to render messages with `media` parameter.
 
     Args:
         user (User): User object.
-        result (ResponseWithPhotos): Bot response object.
+        result (ResponseWithMedia): Bot response object.
 
     Returns:
         OutputMessage: Bot output message.
     """
     match result.type:
-        case ResponseType.PHOTO_URLS:
-            photos = result.photos
-            urls = Strings.PHOTO_URLS_SEPARATOR.join(x.url for x in photos)
-            text = Strings.PHOTO_URLS_TEMPLATE.format(urls=urls)
-            return _create_message(user, text)
+        case ResponseType.ATTACH_MEDIA:
+            return _create_message(user, media=result.media)
 
     raise NotImplementedError
 
 
-def _create_message(user: User, text: str) -> OutputMessage:
+def _create_message(
+    user: User,
+    text: str = '',
+    media: list[Media] | None = None,
+) -> OutputMessage:
     """Internal helper to construct output message.
 
     Args:
         user (User): User object.
-        text (str): Output message text.
+        text (str, optional): Output message text. Defaults to ''.
+        media (list[Media] | None, optional): List of media items to
+            attach to the message. Defaults to None.
 
     Returns:
         OutputMessage: Bot output message.
@@ -163,6 +167,7 @@ def _create_message(user: User, text: str) -> OutputMessage:
         user=user,
         text=text,
         keyboard=_get_keyboard(user.state),
+        media=media or [],
     )
 
 
