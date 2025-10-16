@@ -1,5 +1,6 @@
 """This module defines bot message and keyboard templates."""
 
+from collections.abc import Iterable
 from typing import Final
 
 from vkinder.shared_types import Button
@@ -47,22 +48,55 @@ def normalize_menu_command(text: str) -> str:
     return _STR_TO_MENU_COMMAND.get(text, text)
 
 
-def render_message(user: User, result: Response) -> OutputMessage:
+def render_squashed_message(
+    user: User,
+    responses: Iterable[Response],
+) -> OutputMessage:
+    """Render a sequence of bot responses to single message to send to a user.
+
+    Args:
+        user (User): User object.
+        responses (Iterable[Response]): Sequence of bot responses.
+
+    Returns:
+        OutputMessage: _description_
+    """
+    keyboard: Keyboard | None = None
+    paragraphs: list[str] = []
+    media: list[Media] = []
+    for response in responses:
+        message = render_message(user, response)
+        # Keep just the last keyboard
+        keyboard = message.keyboard
+        # Collect all text paragraphs
+        paragraphs.append(message.text)
+        # Collect media from all messages
+        media.extend(message.media)
+
+    return OutputMessage(
+        user=user,
+        text=Strings.PARAGRAPH_SEPARATOR.join(paragraphs),
+        keyboard=keyboard,
+        media=media or [],
+    )
+
+
+def render_message(user: User, response: Response) -> OutputMessage:
     """Render bot response to actual message to send to a user.
 
     Args:
         user (User): User object.
-        result (Response): Bot response object.
+        response (Response): Bot response object.
 
     Returns:
         OutputMessage: Bot output message.
     """
-    if isinstance(result, ResponseGeneric):
-        return _render_generic(user, result)
-    if isinstance(result, ResponseWithUser):
-        return _render_with_user(user, result)
-    if isinstance(result, ResponseWithMedia):
-        return _render_with_media(user, result)
+    if isinstance(response, ResponseGeneric):
+        return _render_generic(user, response)
+    if isinstance(response, ResponseWithUser):
+        return _render_with_user(user, response)
+    if isinstance(response, ResponseWithMedia):
+        return _render_with_media(user, response)
     raise NotImplementedError
 
 
@@ -76,18 +110,18 @@ _GENERIC_TO_TEXT: Final[dict[ResponseTypesGeneric, str]] = {
 }
 
 
-def _render_generic(user: User, result: ResponseGeneric) -> OutputMessage:
+def _render_generic(user: User, response: ResponseGeneric) -> OutputMessage:
     """Internal helper to render messages without parameters.
 
     Args:
         user (User): User object.
-        result (ResponseGeneric): Bot response object.
+        response (ResponseGeneric): Bot response object.
 
     Returns:
         OutputMessage: Bot output message.
     """
     try:
-        text = _GENERIC_TO_TEXT[result.type]
+        text = _GENERIC_TO_TEXT[response.type]
     except KeyError as e:
         raise NotImplementedError from e
     return _create_message(user, text)
@@ -95,31 +129,31 @@ def _render_generic(user: User, result: ResponseGeneric) -> OutputMessage:
 
 def _render_with_user(
     user: User,
-    result: ResponseWithUser,
+    response: ResponseWithUser,
 ) -> OutputMessage:
     """Internal helper to render messages with `user` parameter.
 
     Args:
         user (User): User object.
-        result (ResponseWithUser): Bot response object.
+        response (ResponseWithUser): Bot response object.
 
     Returns:
         OutputMessage: Bot output message.
     """
-    match result.type:
+    match response.type:
         case ResponseType.GREET_NEW_USER:
-            name = _get_user_name(result.user)
+            name = _get_user_name(response.user)
             text = Strings.GREETING_NEW_USER.format(name=name)
             return _create_message(user, text)
 
         case ResponseType.SEARCH_RESULT:
-            profile = result.user
+            profile = response.user
             heading = Strings.HEADING_USER_PROFILE
             text = _format_profile(profile, heading=heading)
             return _create_message(user, text)
 
         case ResponseType.YOUR_PROFILE:
-            profile = result.user
+            profile = response.user
             heading = Strings.HEADING_YOUR_PROFILE
             text = _format_profile(profile, heading=heading)
             return _create_message(user, text)
@@ -129,20 +163,20 @@ def _render_with_user(
 
 def _render_with_media(
     user: User,
-    result: ResponseWithMedia,
+    response: ResponseWithMedia,
 ) -> OutputMessage:
     """Internal helper to render messages with `media` parameter.
 
     Args:
         user (User): User object.
-        result (ResponseWithMedia): Bot response object.
+        response (ResponseWithMedia): Bot response object.
 
     Returns:
         OutputMessage: Bot output message.
     """
-    match result.type:
+    match response.type:
         case ResponseType.ATTACH_MEDIA:
-            return _create_message(user, media=result.media)
+            return _create_message(user, media=response.media)
 
     raise NotImplementedError
 

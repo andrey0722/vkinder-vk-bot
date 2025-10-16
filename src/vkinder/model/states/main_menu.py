@@ -33,7 +33,7 @@ class MainMenuState(State):
     ) -> Iterator[Response]:
         user = message.user
         text = message.text
-        self._logger.info('User %d selected in main menu: %s', user.id, text)
+        self._logger.info('User %d selected in main menu: %r', user.id, text)
 
         # Match user selection in main menu
         match text:

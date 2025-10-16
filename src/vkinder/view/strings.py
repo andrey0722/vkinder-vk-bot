@@ -56,13 +56,14 @@ class Strings(enum.StrEnum):
     HEADING_USER_PROFILE = 'Анекта пользователя: '
     HEADING_YOUR_PROFILE = 'Твоя анкета: '
 
-    SEPARATOR = '─' * 20
+    PARAGRAPH_SEPARATOR = '\n\n'
+    LINE_SEPARATOR = '─' * 20
 
     USER_NAME_TEMPLATE = 'id{id}'
 
     USER_PROFILE_TEMPLATE = (
         '{heading}\n'
-        f'{SEPARATOR}\n'
+        f'{LINE_SEPARATOR}\n'
         'Имя: {first_name}\n'
         'Фамилия: {last_name}\n'
         'Ник: {nickname}\n'
@@ -75,7 +76,7 @@ class Strings(enum.StrEnum):
 
     MAIN_MENU_HELP = (
         f'Доступные команды:\n'
-        f'{SEPARATOR}\n'
+        f'{LINE_SEPARATOR}\n'
         f'{'\n'.join(f'{k} - {v}' for k, v in MAIN_HELP_MAP.items())}'
     )
 

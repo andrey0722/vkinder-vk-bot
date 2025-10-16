@@ -56,7 +56,7 @@ class SearchingState(State):
     ) -> Iterator[Response]:
         user = message.user
         text = message.text
-        self._logger.info('User %d selected in search menu: %s', user.id, text)
+        self._logger.info('User %d selected in search menu: %r', user.id, text)
 
         # Match user selection in search menu
         match text:

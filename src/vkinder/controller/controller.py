@@ -13,7 +13,7 @@ from vkinder.model import StateManager
 from vkinder.shared_types import InputMessage
 from vkinder.shared_types import Response
 from vkinder.view import normalize_menu_command
-from vkinder.view import render_message
+from vkinder.view import render_squashed_message
 from vkinder.view.strings import Command
 
 from .vk_service import Event
@@ -73,16 +73,18 @@ class Controller:
         with self._db.create_session() as session:
             message = self._event_to_message(session, event)
 
-            # Send all messages from handler to the user
-            for result in handler(session, message):
-                message = render_message(message.user, result)
-                try:
-                    vk.send(message)
-                except VkServiceError:
-                    self._logger.error(
-                        'Error when sending message to user %d',
-                        user_id,
-                    )
+            # Sequence of messages from the state machine
+            responses = handler(session, message)
+
+            # Squash all messages from handler to single message
+            message = render_squashed_message(message.user, responses)
+            try:
+                vk.send(message)
+            except VkServiceError:
+                self._logger.error(
+                    'Error when sending message to user %d',
+                    user_id,
+                )
 
     def _get_command_handler(self, text: str) -> MessageHandler:
         text = text.lower().strip()
