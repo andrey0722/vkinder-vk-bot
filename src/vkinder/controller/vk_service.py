@@ -2,6 +2,7 @@
 
 from collections.abc import Iterator
 import enum
+import itertools
 import random
 from typing import Any, Final, NotRequired, TypedDict, cast
 
@@ -261,7 +262,20 @@ class VkService:
             )
             raise VkApiError(e) from e
 
+    # 752496947
+    # 302526771
+    # 545498940
+    # 5786733
+    _TEST_LIST = [
+        752496947,
+        302526771,
+        545498940,
+        5786733,
+    ]
+    _test_iter = itertools.cycle(_TEST_LIST)
+
     def search_user_by_parameters(self, user_id: int) -> User | None:
+        return self.get_user_profile(next(self._test_iter))
         try:
             current_user = self.get_user_profile(user_id)
         except VkUserNotFoundError:
