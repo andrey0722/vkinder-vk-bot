@@ -15,6 +15,7 @@ __all__ = (
     'Favorite',
     'Sex',
     'User',
+    'UserSearchQuery',
     'UserState',
     'MenuToken',
     'MENU_OPTIONS',
@@ -152,6 +153,18 @@ class OutputMessage:
     media: list[Media] = dataclasses.field(default_factory=list)
 
 
+@dataclasses.dataclass
+class UserSearchQuery:
+    """User search parameters."""
+
+    sex: Sex | None = None
+    city_id: int | None = None
+    online: bool | None = None
+    has_photo: bool | None = None
+    age_min: int | None = None
+    age_max: int | None = None
+
+
 class ResponseType(enum.IntEnum):
     """Defines bot response type and its parameter set."""
 
@@ -166,6 +179,15 @@ class ResponseType(enum.IntEnum):
 
     SELECT_MENU = enum.auto()
     """Show a prompt to select a menu command to the user."""
+
+    USER_SEX_MISSING = enum.auto()
+    """User has not specified their sex in the user profile."""
+
+    USER_CITY_MISSING = enum.auto()
+    """User has not specified their city in the user profile."""
+
+    USER_BIRTHDAY_MISSING = enum.auto()
+    """User has not specified their birthday in the user profile."""
 
     SEARCH_FAILED = enum.auto()
     """The profile search didn't give any results."""
@@ -205,6 +227,9 @@ type ResponseTypesGeneric = Literal[
     ResponseType.UNKNOWN_COMMAND,
     ResponseType.MENU_HELP,
     ResponseType.SELECT_MENU,
+    ResponseType.USER_SEX_MISSING,
+    ResponseType.USER_CITY_MISSING,
+    ResponseType.USER_BIRTHDAY_MISSING,
     ResponseType.SEARCH_FAILED,
     ResponseType.SEARCH_ERROR,
     ResponseType.ADDED_TO_FAVORITE,
@@ -356,6 +381,54 @@ class ResponseFactory:
         """
         return ResponseGeneric(
             type=ResponseType.SELECT_MENU,
+            allow_squash=allow_squash,
+        )
+
+    @staticmethod
+    def user_sex_missing(*, allow_squash: bool = True) -> Response:
+        """User has not specified their sex in the user profile.
+
+        Args:
+            allow_squash (bool, optional): Allow response message to be
+                squashed with others. Defaults to True.
+
+        Returns:
+            Response: Bot response to user.
+        """
+        return ResponseGeneric(
+            type=ResponseType.USER_SEX_MISSING,
+            allow_squash=allow_squash,
+        )
+
+    @staticmethod
+    def user_city_missing(*, allow_squash: bool = True) -> Response:
+        """User has not specified their city in the user profile.
+
+        Args:
+            allow_squash (bool, optional): Allow response message to be
+                squashed with others. Defaults to True.
+
+        Returns:
+            Response: Bot response to user.
+        """
+        return ResponseGeneric(
+            type=ResponseType.USER_CITY_MISSING,
+            allow_squash=allow_squash,
+        )
+
+    @staticmethod
+    def user_birthday_missing(*, allow_squash: bool = True) -> Response:
+        """User has not specified their birthday in the user profile.
+
+        Args:
+            allow_squash (bool, optional): Allow response message to be
+                squashed with others. Defaults to True.
+
+        Returns:
+            Response: Bot response to user.
+        """
+        return ResponseGeneric(
+            type=ResponseType.USER_BIRTHDAY_MISSING,
             allow_squash=allow_squash,
         )
 

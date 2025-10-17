@@ -1,6 +1,7 @@
 """Implements classes for VK API interaction."""
 
 from collections.abc import Iterator
+import datetime
 import enum
 import random
 from typing import Any, Final, NotRequired, TypedDict, cast
@@ -22,6 +23,7 @@ from vkinder.shared_types import Photo
 from vkinder.shared_types import Sex
 from vkinder.shared_types import TextAction
 from vkinder.shared_types import User
+from vkinder.shared_types import UserSearchQuery
 
 type VkObject = dict[str, Any]
 
@@ -159,8 +161,32 @@ class VkPhotoEx(VkPhoto):
     reposts: VkHasCount
 
 
+class VkUsersGetParams(TypedDict):
+    """Parameters for 'users.get' API method."""
+
+    user_ids: int | str
+    fields: str
+
+
 type VkUsersGetResult = list[VkUser]
 """VK response object for 'users.get' API method."""
+
+
+class VkUsersSearchParams(VkHasCount):
+    """Parameters for 'users.search' API method."""
+
+    offset: int
+    fields: str
+    sex: NotRequired[VkSex]
+    city: NotRequired[int]
+    online: NotRequired[bool]
+    has_photo: NotRequired[bool]
+    age_from: NotRequired[int]
+    age_to: NotRequired[int]
+
+
+class VkUsersSearchResult(VkHasItems[VkUser]):
+    """VK response object for 'users.search' API method."""
 
 
 class VkPhotosGetResult(VkHasItems[VkPhoto]):
@@ -169,6 +195,16 @@ class VkPhotosGetResult(VkHasItems[VkPhoto]):
 
 class VkPhotosGetExResult(VkHasItems[VkPhotoEx]):
     """VK response object for 'photos.get' API method with extended=1."""
+
+
+class VkMessagesSendParams(TypedDict):
+    """Parameters for 'messages.send' API method."""
+
+    user_id: int
+    message: str
+    random_id: int
+    keyboard: NotRequired[str]
+    attachment: NotRequired[str]
 
 
 class VkServiceError(VkinderError):
@@ -242,17 +278,16 @@ class VkService:
         attachment = _convert_attachment(message.media)
         self._logger.info('Attachment for user %d: %r', user_id, attachment)
 
+        params = VkMessagesSendParams(
+            user_id=user_id,
+            message=text,
+            keyboard=vk_keyboard,
+            attachment=attachment,
+            random_id=_get_random_id(),
+        )
+
         try:
-            self._vk.method(
-                'messages.send',
-                {
-                    'user_id': user_id,
-                    'message': text,
-                    'keyboard': vk_keyboard,
-                    'attachment': attachment,
-                    'random_id': _get_random_id(),
-                },
-            )
+            self._vk.method('messages.send', params)
         except vk_api.VkApiError as e:
             self._logger.error(
                 'Failed to send message to user %d: %s',
@@ -261,41 +296,52 @@ class VkService:
             )
             raise VkApiError(e) from e
 
-    def search_user_by_parameters(self, user_id: int) -> User | None:
-        try:
-            current_user = self.get_user_profile(user_id)
-        except VkUserNotFoundError:
-            self._logger.warning('Не удалось найти пользователя с id=%d', user_id)
-            return None
+    def search_user(self, query: UserSearchQuery) -> User | None:
+        """Perform user search using specified search query.
+
+        Args:
+            query (UserSearchQuery): Search query object.
+
+        Returns:
+            User | None: User profile found if any.
+
+        Raises:
+            VkApiError: Error when using VK API.
+        """
+        self._logger.debug('Searching users with query %r', query)
 
         random_offset = random.randint(0, 999)
 
-        user_sex = current_user.sex
-        if user_sex == Sex.NOT_KNOWN:
-            self._logger.debug('Не удалось определить пол, поиск отменяется')
-            return None
-
-        sex = VkSex.FEMALE if user_sex == Sex.MALE else VkSex.MALE
+        params = VkUsersSearchParams(
+            count=1,
+            offset=random_offset,
+            fields=_REQUEST_USER_FIELDS,
+        )
+        if query.sex is not None:
+            params['sex'] = _SEX_TO_VK_SEX[query.sex]
+        if query.city_id is not None:
+            params['city'] = query.city_id
+        if query.online is not None:
+            params['online'] = query.online
+        if query.has_photo is not None:
+            params['has_photo'] = query.has_photo
+        if query.age_min is not None:
+            params['age_from'] = query.age_min
+        if query.age_max is not None:
+            params['age_to'] = query.age_max
 
         try:
-            result = self._vk_user.method(
-                "users.search",
-                {
-                    "count": 1,
-                    'offset' : random_offset,
-                    "has_photo": 1,
-                    "online": 1,
-                    "sex": sex,
-                    'fields': _REQUEST_USER_FIELDS,
-                },
-            )
+            response = self._vk_user.method('users.search', params)
         except vk_api.exceptions.VkApiError as e:
             self._logger.error('User search error: %s', e)
             raise VkApiError(e) from e
 
-        if users := result.get('items', []):
+        # Use type checker for VK API response
+        response = cast(VkUsersSearchResult, response)
+
+        if users := response.get('items', []):
             return _convert_user(users[0])
-        self._logger.warning('Не найдено пользователей по критериям поиска')
+        self._logger.warning('No users found for query %r', query)
         return None
 
     def get_user_profile(self, user_id: int) -> User:
@@ -312,14 +358,14 @@ class VkService:
             User: User object.
         """
         self._logger.debug('Extracting user profile for id=%d', user_id)
+
+        params = VkUsersGetParams(
+            user_ids=user_id,
+            fields=_REQUEST_USER_FIELDS,
+        )
+
         try:
-            response = self._vk.method(
-                'users.get',
-                {
-                    'user_ids': user_id,
-                    'fields': _REQUEST_USER_FIELDS,
-                },
-            )
+            response = self._vk.method('users.get', params)
         except vk_api.exceptions.VkApiError as e:
             self._logger.error(
                 'Error when extracting user profile %d: %s',
@@ -490,6 +536,12 @@ _VK_SEX_TO_SEX: dict[VkSex, Sex] = {
 """VK sex mapping."""
 
 
+_SEX_TO_VK_SEX: dict[Sex, VkSex] = {
+    sex: vk_sex for vk_sex, sex in _VK_SEX_TO_SEX.items()
+}
+"""Inverted VK sex mapping."""
+
+
 def _convert_sex(sex: VkSex | None) -> Sex:
     """Convert VK sex notation to standard.
 
@@ -504,6 +556,30 @@ def _convert_sex(sex: VkSex | None) -> Sex:
     except ValueError:
         return Sex.NOT_KNOWN
     return _VK_SEX_TO_SEX[vk_sex]
+
+
+def _convert_bdate(bdate: str | None) -> datetime.date | None:
+    """Internal helper that parses VK birth date format.
+
+    Args:
+        bdate (str | None): Input birth date string, if any.
+
+    Returns:
+        datetime.date | None: Extracted date object if input is correct
+            and complete. If input is invalid or some date parts are
+            missing, then `None`.
+    """
+    if bdate is None:
+        # Birth date is missing completely
+        return None
+    try:
+        parts = tuple(map(int, bdate.split('.')))
+        day, month, year = parts
+        # Birth date is complete and OK
+        return datetime.date(year, month, day)
+    except (ValueError, IndexError):
+        # Invalid input format or birth year is missing
+        return None
 
 
 def _convert_user(user: VkUser) -> User:
@@ -523,7 +599,7 @@ def _convert_user(user: VkUser) -> User:
         first_name=user['first_name'],
         last_name=user['last_name'],
         sex=_convert_sex(user.get('sex')),
-        birthday=user.get('bday'),
+        birthday=_convert_bdate(user.get('bdate')),
         city_id=city and city['id'],
         city=city and city['title'],
         nickname=user.get('nickname'),

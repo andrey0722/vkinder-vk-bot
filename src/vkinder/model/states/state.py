@@ -9,6 +9,7 @@ from vkinder.log import get_logger
 from vkinder.model.db import DatabaseSession
 from vkinder.shared_types import MENU_OPTIONS
 from vkinder.shared_types import InputMessage
+from vkinder.shared_types import MenuToken
 from vkinder.shared_types import Response
 from vkinder.shared_types import ResponseFactory
 
@@ -85,7 +86,9 @@ class State(abc.ABC):
         Returns:
             bool: `True` if the command is accepted, otherwise `False`.
         """
-        return message.text in MENU_OPTIONS[message.user.state]
+        text = message.text
+        accepted_options = MENU_OPTIONS[message.user.state]
+        return isinstance(text, MenuToken) and text in accepted_options
 
     def unknown_command(
         self,

@@ -22,6 +22,7 @@ from vkinder.shared_types import TextAction
 from vkinder.shared_types import User
 from vkinder.shared_types import UserState
 
+from .strings import BIRTHDAY_FORMAT
 from .strings import BOOL_MAP
 from .strings import HELP_MAP
 from .strings import SEX_MAP
@@ -157,6 +158,9 @@ _MENU_HELP_MAP: Final[dict[UserState, str]] = {
 _GENERIC_TO_TEXT: Final[dict[ResponseTypesGeneric, str]] = {
     ResponseType.UNKNOWN_COMMAND: Strings.UNKNOWN_COMMAND,
     ResponseType.SELECT_MENU: Strings.SELECT_ACTION,
+    ResponseType.USER_SEX_MISSING: Strings.USER_SEX_MISSING,
+    ResponseType.USER_CITY_MISSING: Strings.USER_CITY_MISSING,
+    ResponseType.USER_BIRTHDAY_MISSING: Strings.USER_BIRTHDAY_MISSING,
     ResponseType.SEARCH_FAILED: Strings.SEARCH_FAILED,
     ResponseType.SEARCH_ERROR: Strings.SEARCH_ERROR,
     ResponseType.ADDED_TO_FAVORITE: Strings.ADDED_TO_FAVORITE,
@@ -338,13 +342,15 @@ def _format_profile(user: User, *, heading: str) -> str:
     Returns:
         str: Formatted user profile.
     """
+    birthday = user.birthday and user.birthday.strftime(BIRTHDAY_FORMAT)
     return Strings.USER_PROFILE_TEMPLATE.format(
         heading=heading,
         first_name=user.first_name or Strings.NOT_SPECIFIED,
         last_name=user.last_name or Strings.NOT_SPECIFIED,
         nickname=user.nickname or Strings.NOT_SPECIFIED,
         sex=SEX_MAP[user.sex],
-        birthday=user.birthday or Strings.NOT_SPECIFIED,
+        birthday=birthday or Strings.NOT_SPECIFIED,
+        age=user.age or Strings.NOT_SPECIFIED,
         city=user.city or Strings.NOT_SPECIFIED,
         id=user.id,
         url=user.url,

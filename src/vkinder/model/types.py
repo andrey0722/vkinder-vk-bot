@@ -53,7 +53,7 @@ class User(ModelBaseType):
     )
     """User specified sex."""
 
-    birthday: Mapped[str | None] = orm.mapped_column(sa.String(10))
+    birthday: Mapped[datetime.date | None] = orm.mapped_column()
     """User specified birthday."""
 
     city_id: Mapped[int | None] = orm.mapped_column()
@@ -98,6 +98,23 @@ class User(ModelBaseType):
         )
     )
     """User progress in favorite list mode."""
+
+    @property
+    def age(self) -> int | None:
+        """Calculates user's age AKA number of full years since birth.
+
+        Returns:
+            int | None: User's age if birthday is specified. Otherwise `None`.
+        """
+        birthday = self.birthday
+        if not birthday:
+            return None
+        today = datetime.datetime.now(tz=datetime.UTC).date()
+        age = today.year - birthday.year
+        if (today.month, today.day) < (birthday.month, birthday.day):
+            # Birthday hasn't pass at this year
+            age -= 1
+        return age
 
 
 class Favorite(ModelBaseType):

@@ -1,7 +1,7 @@
 """This module shows search results to user and handles user commands."""
 
 from collections.abc import Iterator
-from typing import override
+from typing import Final, override
 
 from vkinder.controller.vk_service import VkServiceError
 from vkinder.model import ModelError
@@ -10,9 +10,31 @@ from vkinder.shared_types import InputMessage
 from vkinder.shared_types import MenuToken
 from vkinder.shared_types import Response
 from vkinder.shared_types import ResponseFactory
+from vkinder.shared_types import Sex
+from vkinder.shared_types import User
+from vkinder.shared_types import UserSearchQuery
 
 from ..db import DatabaseSession
 from .state import State
+
+SEARCH_AGE_MAX_GAP = 1
+"""Maximum age gap to use in profile search."""
+
+
+class SearchCriteriaError(ModelError):
+    """Error when computing user search criteria."""
+
+
+class UserSexNotKnownError(SearchCriteriaError):
+    """User has not specified their sex in the user profile."""
+
+
+class UserCityNotKnownError(SearchCriteriaError):
+    """User has not specified their city in the user profile."""
+
+
+class UserBirthdayNotKnownError(SearchCriteriaError):
+    """User has not specified their birthday in the user profile."""
 
 
 class SearchingState(State):
@@ -27,8 +49,26 @@ class SearchingState(State):
         with session.begin():
             user = message.user
         self._logger.info('Starting for user %d', user.id)
+
+        # Try to calculate user search criteria
         try:
-            profile = self.vk.search_user_by_parameters(user.id)
+            query = self._get_search_query(user)
+        except SearchCriteriaError as e:
+            self._logger.error('Failed to create search criteria')
+            if isinstance(e, UserSexNotKnownError):
+                yield ResponseFactory.user_sex_missing()
+            elif isinstance(e, UserCityNotKnownError):
+                yield ResponseFactory.user_city_missing()
+            elif isinstance(e, UserBirthdayNotKnownError):
+                yield ResponseFactory.user_birthday_missing()
+            else:
+                raise NotImplementedError from e
+            yield from self._manager.start_main_menu(session, message)
+            return
+
+        # Everything is OK, try to search
+        try:
+            profile = self.vk.search_user(query)
         except VkServiceError:
             yield ResponseFactory.search_error()
             yield from self._manager.start_main_menu(session, message)
@@ -79,6 +119,51 @@ class SearchingState(State):
 
             case MenuToken.HELP:
                 yield ResponseFactory.menu_help()
+
+    _SEARCH_SEX_MAP: Final[dict[Sex, Sex]] = {
+        Sex.FEMALE: Sex.MALE,
+        Sex.MALE: Sex.FEMALE,
+    }
+    """Mapping for sex selection in search query."""
+
+    def _get_search_query(self, user: User) -> UserSearchQuery:
+        """Internal helper to calculate query parameters for given user.
+
+        Args:
+            user (User): User object.
+
+        Raises:
+            UserSexNotKnownError: User sex is not known.
+            UserCityNotKnownError: User city is not known.
+
+        Returns:
+            UserSearchQuery: User search query object.
+        """
+        try:
+            sex = self._SEARCH_SEX_MAP[user.sex]
+        except KeyError as e:
+            self._logger.error('User sex is missing')
+            raise UserSexNotKnownError from e
+
+        city_id = user.city_id
+        if city_id is None:
+            self._logger.error('User city is missing')
+            raise UserCityNotKnownError
+
+        age = user.age
+        if age is None:
+            self._logger.error('User birthday is missing')
+            raise UserBirthdayNotKnownError
+        self._logger.debug('User age is %d', age)
+
+        return UserSearchQuery(
+            sex=sex,
+            city_id=city_id,
+            online=True,
+            has_photo=True,
+            age_min=max(age - SEARCH_AGE_MAX_GAP, 0),
+            age_max=age + SEARCH_AGE_MAX_GAP,
+        )
 
     def _add_favorite(
         self,
