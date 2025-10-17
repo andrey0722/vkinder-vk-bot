@@ -9,6 +9,7 @@ from vkinder.shared_types import User
 from vkinder.shared_types import UserState
 
 from ..db import DatabaseSession
+from .favorite_list import FavoriteListState
 from .main_menu import MainMenuState
 from .new_user import NewUserState
 from .searching import SearchingState
@@ -29,6 +30,7 @@ class StateManager:
             UserState.NEW_USER: NewUserState(self),
             UserState.MAIN_MENU: MainMenuState(self),
             UserState.SEARCHING: SearchingState(self),
+            UserState.FAVORITE_LIST: FavoriteListState(self),
         }
 
     @property

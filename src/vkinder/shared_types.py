@@ -4,18 +4,20 @@ import abc
 from collections.abc import Sequence
 import dataclasses
 import enum
-from typing import Literal
+from typing import Final, Literal
 
+from vkinder.model.types import Favorite
 from vkinder.model.types import Sex
 from vkinder.model.types import User
 from vkinder.model.types import UserState
 
 __all__ = (
+    'Favorite',
     'Sex',
     'User',
     'UserState',
-    'MainMenu',
-    'SearchMenu',
+    'MenuToken',
+    'MENU_OPTIONS',
     'Photo',
     'Button',
     'ButtonAction',
@@ -28,21 +30,42 @@ __all__ = (
 
 
 @enum.unique
-class MainMenu(enum.StrEnum):
-    """Commands in main menu."""
+class MenuToken(enum.StrEnum):
+    """All string tokens acceptable as menu input."""
 
     SEARCH = enum.auto()
     PROFILE = enum.auto()
+    FAVORITE = enum.auto()
     HELP = enum.auto()
-
-
-@enum.unique
-class SearchMenu(enum.StrEnum):
-    """Commands in search menu."""
-
+    PREV = enum.auto()
     NEXT = enum.auto()
+    DELETE_FAVORITE = enum.auto()
     ADD_FAVORITE = enum.auto()
     GO_BACK = enum.auto()
+
+
+MENU_OPTIONS: Final[dict[UserState, tuple[MenuToken, ...]]] = {
+    UserState.MAIN_MENU: (
+        MenuToken.SEARCH,
+        MenuToken.PROFILE,
+        MenuToken.FAVORITE,
+        MenuToken.HELP,
+    ),
+    UserState.SEARCHING: (
+        MenuToken.NEXT,
+        MenuToken.ADD_FAVORITE,
+        MenuToken.GO_BACK,
+        MenuToken.HELP,
+    ),
+    UserState.FAVORITE_LIST: (
+        MenuToken.PREV,
+        MenuToken.NEXT,
+        MenuToken.DELETE_FAVORITE,
+        MenuToken.GO_BACK,
+        MenuToken.HELP,
+    ),
+}
+"""Commands in menu for each user state."""
 
 
 class MediaType(enum.StrEnum):
@@ -138,8 +161,8 @@ class ResponseType(enum.IntEnum):
     GREET_NEW_USER = enum.auto()
     """Send greeting text for a new user."""
 
-    MAIN_MENU_HELP = enum.auto()
-    """Show main menu help text to the user."""
+    MENU_HELP = enum.auto()
+    """Show menu help text to the user."""
 
     SELECT_MENU = enum.auto()
     """Show a prompt to select a menu command to the user."""
@@ -153,6 +176,21 @@ class ResponseType(enum.IntEnum):
     SEARCH_RESULT = enum.auto()
     """Show found profile to the user."""
 
+    ADDED_TO_FAVORITE = enum.auto()
+    """Added last found profile to user's favorite list."""
+
+    ADD_TO_FAVORITE_FAILED = enum.auto()
+    """Failed to add profile to user's favorite list."""
+
+    FAVORITE_LIST_FAILED = enum.auto()
+    """Failed to show user's favorite list."""
+
+    FAVORITE_LIST_EMPTY = enum.auto()
+    """User's favorite list is empty."""
+
+    FAVORITE_RESULT = enum.auto()
+    """Show user's favorite list entry."""
+
     ATTACH_MEDIA = enum.auto()
     """Attach media objects to the bot message."""
 
@@ -165,10 +203,14 @@ class ResponseType(enum.IntEnum):
 
 type ResponseTypesGeneric = Literal[
     ResponseType.UNKNOWN_COMMAND,
-    ResponseType.MAIN_MENU_HELP,
+    ResponseType.MENU_HELP,
     ResponseType.SELECT_MENU,
     ResponseType.SEARCH_FAILED,
     ResponseType.SEARCH_ERROR,
+    ResponseType.ADDED_TO_FAVORITE,
+    ResponseType.ADD_TO_FAVORITE_FAILED,
+    ResponseType.FAVORITE_LIST_FAILED,
+    ResponseType.FAVORITE_LIST_EMPTY,
     ResponseType.PHOTO_FAILED,
 ]
 """All responses supporting without parameters."""
@@ -179,6 +221,9 @@ class ResponseGeneric:
     """Basic response without parameters."""
 
     type: ResponseTypesGeneric
+
+    allow_squash: bool = True
+    """Allow response message to be squashed with others."""
 
 
 type ResponseTypesWithUser = Literal[
@@ -196,6 +241,28 @@ class ResponseWithUser:
     type: ResponseTypesWithUser
     user: User
 
+    allow_squash: bool = True
+    """Allow response message to be squashed with others."""
+
+
+type ResponseTypesWithUserIndex = Literal[
+    ResponseType.FAVORITE_RESULT,
+]
+"""All responses supporting `user` and `index` fields."""
+
+
+@dataclasses.dataclass
+class ResponseWithUserIndex:
+    """State result with user profile and index as parameters."""
+
+    type: ResponseTypesWithUserIndex
+    user: User
+    index: int
+    total: int
+
+    allow_squash: bool = True
+    """Allow response message to be squashed with others."""
+
 
 type ResponseTypesWithMedia = Literal[
     ResponseType.ATTACH_MEDIA,
@@ -210,9 +277,15 @@ class ResponseWithMedia:
     type: ResponseTypesWithMedia
     media: list[Media]
 
+    allow_squash: bool = True
+    """Allow response message to be squashed with others."""
+
 
 type Response = (
-    ResponseGeneric | ResponseWithUser | ResponseWithMedia
+    ResponseGeneric
+    | ResponseWithUser
+    | ResponseWithUserIndex
+    | ResponseWithMedia
 )
 """Bot response type to user."""
 
@@ -221,20 +294,29 @@ class ResponseFactory:
     """Contains factory functions for all responses."""
 
     @staticmethod
-    def unknown_command() -> Response:
+    def unknown_command(*, allow_squash: bool = True) -> Response:
         """The user has input an invalid command.
+
+        Args:
+            allow_squash (bool, optional): Allow response message to be
+                squashed with others. Defaults to True.
 
         Returns:
             Response: Bot response to user.
         """
-        return ResponseGeneric(ResponseType.UNKNOWN_COMMAND)
+        return ResponseGeneric(
+            type=ResponseType.UNKNOWN_COMMAND,
+            allow_squash=allow_squash,
+        )
 
     @staticmethod
-    def greet_new_user(user: User) -> Response:
+    def greet_new_user(user: User, *, allow_squash: bool = True) -> Response:
         """Send greeting text for a new user.
 
         Args:
             user (User): User object.
+            allow_squash (bool, optional): Allow response message to be
+                squashed with others. Defaults to True.
 
         Returns:
             Response: Bot response to user.
@@ -242,50 +324,85 @@ class ResponseFactory:
         return ResponseWithUser(
             type=ResponseType.GREET_NEW_USER,
             user=user,
+            allow_squash=allow_squash,
         )
 
     @staticmethod
-    def main_menu_help() -> Response:
-        """Show main menu help text to the user.
+    def menu_help(*, allow_squash: bool = True) -> Response:
+        """Show menu help text to the user.
+
+        Args:
+            allow_squash (bool, optional): Allow response message to be
+                squashed with others. Defaults to True.
 
         Returns:
             Response: Bot response to user.
         """
-        return ResponseGeneric(ResponseType.MAIN_MENU_HELP)
+        return ResponseGeneric(
+            type=ResponseType.MENU_HELP,
+            allow_squash=allow_squash,
+        )
 
     @staticmethod
-    def select_menu() -> Response:
+    def select_menu(*, allow_squash: bool = True) -> Response:
         """Show a prompt to select a menu command to the user.
 
+        Args:
+            allow_squash (bool, optional): Allow response message to be
+                squashed with others. Defaults to True.
+
         Returns:
             Response: Bot response to user.
         """
-        return ResponseGeneric(ResponseType.SELECT_MENU)
+        return ResponseGeneric(
+            type=ResponseType.SELECT_MENU,
+            allow_squash=allow_squash,
+        )
 
     @staticmethod
-    def search_failed() -> Response:
+    def search_failed(*, allow_squash: bool = True) -> Response:
         """The profile search didn't give any results.
 
+        Args:
+            allow_squash (bool, optional): Allow response message to be
+                squashed with others. Defaults to True.
+
         Returns:
             Response: Bot response to user.
         """
-        return ResponseGeneric(ResponseType.SEARCH_FAILED)
+        return ResponseGeneric(
+            type=ResponseType.SEARCH_FAILED,
+            allow_squash=allow_squash,
+        )
 
     @staticmethod
-    def search_error() -> Response:
+    def search_error(*, allow_squash: bool = True) -> Response:
         """The profile search interrupted by an error.
 
+        Args:
+            allow_squash (bool, optional): Allow response message to be
+                squashed with others. Defaults to True.
+
         Returns:
             Response: Bot response to user.
         """
-        return ResponseGeneric(ResponseType.SEARCH_ERROR)
+        return ResponseGeneric(
+            type=ResponseType.SEARCH_ERROR,
+            allow_squash=allow_squash,
+        )
 
     @staticmethod
-    def search_result(profile: User) -> Response:
+    def search_result(
+        profile: User,
+        *,
+        allow_squash: bool = True,
+    ) -> Response:
         """Send greeting text for a new user.
 
         Args:
             profile (User): Found user profile.
+            allow_squash (bool, optional): Allow response message to be
+                squashed with others. Defaults to True.
 
         Returns:
             Response: Bot response to user.
@@ -293,14 +410,113 @@ class ResponseFactory:
         return ResponseWithUser(
             type=ResponseType.SEARCH_RESULT,
             user=profile,
+            allow_squash=allow_squash,
         )
 
     @staticmethod
-    def attach_media(media: list[Media]) -> Response:
+    def added_to_favorite(*, allow_squash: bool = True) -> Response:
+        """Added last found profile to user's favorite list.
+
+        Args:
+            allow_squash (bool, optional): Allow response message to be
+                squashed with others. Defaults to True.
+
+        Returns:
+            Response: Bot response to user.
+        """
+        return ResponseGeneric(
+            type=ResponseType.ADDED_TO_FAVORITE,
+            allow_squash=allow_squash,
+        )
+
+    @staticmethod
+    def add_to_favorite_failed(*, allow_squash: bool = True) -> Response:
+        """Failed to add profile to user's favorite list.
+
+        Args:
+            allow_squash (bool, optional): Allow response message to be
+                squashed with others. Defaults to True.
+
+        Returns:
+            Response: Bot response to user.
+        """
+        return ResponseGeneric(
+            type=ResponseType.ADD_TO_FAVORITE_FAILED,
+            allow_squash=allow_squash,
+        )
+
+    @staticmethod
+    def favorite_list_failed(*, allow_squash: bool = True) -> Response:
+        """Failed to show user's favorite list.
+
+        Args:
+            allow_squash (bool, optional): Allow response message to be
+                squashed with others. Defaults to True.
+
+        Returns:
+            Response: Bot response to user.
+        """
+        return ResponseGeneric(
+            type=ResponseType.FAVORITE_LIST_FAILED,
+            allow_squash=allow_squash,
+        )
+
+    @staticmethod
+    def favorite_list_empty(*, allow_squash: bool = True) -> Response:
+        """User's favorite list is empty.
+
+        Args:
+            allow_squash (bool, optional): Allow response message to be
+                squashed with others. Defaults to True.
+
+        Returns:
+            Response: Bot response to user.
+        """
+        return ResponseGeneric(
+            type=ResponseType.FAVORITE_LIST_EMPTY,
+            allow_squash=allow_squash,
+        )
+
+    @staticmethod
+    def favorite_result(
+        profile: User,
+        index: int,
+        total: int,
+        *,
+        allow_squash: bool = True,
+    ) -> Response:
+        """Send greeting text for a new user.
+
+        Args:
+            profile (User): Found user profile.
+            index (int): User profile index number.
+            total (int): Total number of user profiles.
+            allow_squash (bool, optional): Allow response message to be
+                squashed with others. Defaults to True.
+
+        Returns:
+            Response: Bot response to user.
+        """
+        return ResponseWithUserIndex(
+            type=ResponseType.FAVORITE_RESULT,
+            user=profile,
+            index=index,
+            total=total,
+            allow_squash=allow_squash,
+        )
+
+    @staticmethod
+    def attach_media(
+        media: list[Media],
+        *,
+        allow_squash: bool = True,
+    ) -> Response:
         """Attach media objects to the bot message.
 
         Args:
             media (list[Media]): List of media objects.
+            allow_squash (bool, optional): Allow response message to be
+                squashed with others. Defaults to True.
 
         Returns:
             Response: Bot response to user.
@@ -308,23 +524,33 @@ class ResponseFactory:
         return ResponseWithMedia(
             type=ResponseType.ATTACH_MEDIA,
             media=media,
+            allow_squash=allow_squash,
         )
 
     @staticmethod
-    def photo_failed() -> Response:
+    def photo_failed(*, allow_squash: bool = True) -> Response:
         """Could not fetch profile photos.
+
+        Args:
+            allow_squash (bool, optional): Allow response message to be
+                squashed with others. Defaults to True.
 
         Returns:
             Response: Bot response to user.
         """
-        return ResponseGeneric(ResponseType.PHOTO_FAILED)
+        return ResponseGeneric(
+            type=ResponseType.PHOTO_FAILED,
+            allow_squash=allow_squash,
+        )
 
     @staticmethod
-    def your_profile(user: User) -> Response:
+    def your_profile(user: User, *, allow_squash: bool = True) -> Response:
         """Show own profile to the user.
 
         Args:
             user (User): User object.
+            allow_squash (bool, optional): Allow response message to be
+                squashed with others. Defaults to True.
 
         Returns:
             Response: Bot response to user.
@@ -332,4 +558,5 @@ class ResponseFactory:
         return ResponseWithUser(
             type=ResponseType.YOUR_PROFILE,
             user=user,
+            allow_squash=allow_squash,
         )

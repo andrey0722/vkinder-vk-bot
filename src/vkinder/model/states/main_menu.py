@@ -4,7 +4,7 @@ from collections.abc import Iterator
 from typing import override
 
 from vkinder.shared_types import InputMessage
-from vkinder.shared_types import MainMenu
+from vkinder.shared_types import MenuToken
 from vkinder.shared_types import Response
 from vkinder.shared_types import ResponseFactory
 
@@ -31,28 +31,35 @@ class MainMenuState(State):
         session: DatabaseSession,
         message: InputMessage,
     ) -> Iterator[Response]:
-        user = message.user
+        with session.begin():
+            user = message.user
         text = message.text
         self._logger.info('User %d selected in main menu: %r', user.id, text)
 
+        if not self.is_command_accepted(message):
+            yield from self.unknown_command(session, message)
+            return
+
         # Match user selection in main menu
         match text:
-            case MainMenu.SEARCH:
+            case MenuToken.SEARCH:
                 yield from self._manager.start(
                     session=session,
                     message=message,
                     state=UserState.SEARCHING,
                 )
 
-            case MainMenu.PROFILE:
+            case MenuToken.PROFILE:
                 yield ResponseFactory.your_profile(message.user)
                 yield from self.start(session, message)
 
-            case MainMenu.HELP:
-                yield ResponseFactory.main_menu_help()
-                yield from self.start(session, message)
+            case MenuToken.FAVORITE:
+                yield from self._manager.start(
+                    session=session,
+                    message=message,
+                    state=UserState.FAVORITE_LIST,
+                )
 
-            case _:
-                self._logger.warning('Unknown main menu option: %s', text)
-                yield ResponseFactory.unknown_command()
+            case MenuToken.HELP:
+                yield ResponseFactory.menu_help()
                 yield from self.start(session, message)

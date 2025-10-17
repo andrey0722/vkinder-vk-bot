@@ -1,6 +1,7 @@
 """This module defines logic of database interaction.."""
 
 from collections.abc import Callable
+from collections.abc import Iterator
 import contextlib
 from types import TracebackType
 from typing import Self, override
@@ -8,6 +9,7 @@ from typing import Self, override
 import sqlalchemy as sa
 from sqlalchemy import exc
 from sqlalchemy import orm
+from sqlalchemy.sql import functions as func
 
 from vkinder.config import DatabaseConfig
 from vkinder.log import get_logger
@@ -15,6 +17,8 @@ from vkinder.log import get_logger
 from .exceptions import DatabaseError
 from .exceptions import UserNotFoundError
 from .log import set_sqlalchemy_debug_filter
+from .types import Favorite
+from .types import FavoriteListProgress
 from .types import ModelBaseType
 from .types import User
 from .types import UserState
@@ -185,6 +189,7 @@ class DatabaseSession(contextlib.AbstractContextManager):
         if existing_user := self.get_user(user.id):
             # Apply user state from the model
             user.state = existing_user.state
+            user.last_found_id = existing_user.last_found_id
             # Update user info, it could change since last message
             user = self.update_user(user)
         else:
@@ -222,6 +227,323 @@ class DatabaseSession(contextlib.AbstractContextManager):
         else:
             self._logger.warning('No user %s, cannot delete', user_id)
         return user
+
+    def favorite_exists(self, user: User, profile_id: int) -> bool:
+        """Checks whether the DB contains favorite record with profile id.
+
+        Args:
+            user (User): User object.
+            profile_id (int): Profile id.
+
+        Returns:
+            bool: `True` is the record exists, otherwise `False`.
+
+        Raises:
+            DatabaseError: DB operational error.
+        """
+        self._logger.debug(
+            'Checking if favorite %d exists for user %r',
+            profile_id,
+            user,
+        )
+        return self.get_favorite(user, profile_id) is not None
+
+    def get_favorite(self, user: User, profile_id: int) -> Favorite | None:
+        """Extracts a favorite record from the DB using profile id.
+
+        Args:
+            user (User): User object.
+            profile_id (int): Profile id.
+
+        Returns:
+            Favorite | None: Found favorite record for this id if any,
+                otherwise `None`.
+
+        Raises:
+            DatabaseError: DB operational error.
+        """
+        self._logger.debug('Extracting favorite %d for %r', profile_id, user)
+        try:
+            favorite = self._session.get(Favorite, (user.id, profile_id))
+        except exc.SQLAlchemyError as e:
+            me = _create_db_error(e)
+            self._logger.error(
+                'Get favorite error: user=%r, profile_id=%d, error=%s',
+                user,
+                profile_id,
+                e,
+            )
+            raise me from e
+
+        if favorite is not None:
+            self._logger.debug('Favorite exists: %r', favorite)
+        else:
+            self._logger.debug(
+                'Favorite %s does not exist for user %r',
+                profile_id,
+                user,
+            )
+        return favorite
+
+    def get_favorite_index(self, user: User, index: int) -> Favorite | None:
+        """Extracts a favorite record from the DB using its positional index.
+
+        Args:
+            user (User): User object.
+            index (int): Record positional index.
+
+        Returns:
+            Favorite | None: Found favorite record for this index if any,
+                otherwise `None`.
+
+        Raises:
+            DatabaseError: DB operational error.
+        """
+        self._logger.debug('Extracting favorite index %d for %r', index, user)
+        try:
+            stmt = (
+                user.favorites.select()
+                .order_by(Favorite.created_at)
+                .offset(index)
+                .limit(1)
+            )
+            favorite = self._session.scalar(stmt)
+        except exc.SQLAlchemyError as e:
+            me = _create_db_error(e)
+            self._logger.error(
+                'Get favorite error: user=%r, index=%d, error=%s',
+                user,
+                index,
+                e,
+            )
+            raise me from e
+
+        if favorite is not None:
+            self._logger.debug('Favorite index %d exists: %r', index, favorite)
+        else:
+            self._logger.debug(
+                'Favorite index %d does not exist for user %r',
+                index,
+                user,
+            )
+        return favorite
+
+    def add_favorite(self, favorite: Favorite) -> None:
+        """Adds new favorite record into the DB.
+
+        Input object could be modified in-place to respect current DB state.
+
+        Args:
+            favorite (Favorite): Favorite object.
+
+        Raises:
+            DatabaseError: DB operational error.
+        """
+        self._logger.debug('Adding user %r', favorite)
+        try:
+            self._session.add(favorite)
+        except exc.SQLAlchemyError as e:
+            me = _create_db_error(e)
+            self._logger.error('Add favorite: obj=%r, error=%s', favorite, e)
+            raise me from e
+
+        self._logger.debug('Added favorite %r', favorite)
+
+    def delete_favorite(
+        self,
+        user: User,
+        profile_id: int,
+    ) -> Favorite | None:
+        """Delete a particular favorite record for a user.
+
+        Args:
+            user (User): User object.
+            profile_id (int): Profile id that the user has added as favorite.
+
+        Returns:
+            Favorite | None: Favorite record deleted from the DB if any.
+
+        Raises:
+            DatabaseError: DB operational error.
+        """
+        self._logger.debug('Deleting favorite %d from %r', profile_id, user)
+        try:
+            stmt = (
+                user.favorites.delete()
+                .where(Favorite.profile_id == profile_id)
+                .returning(Favorite)
+            )
+            favorite = self._session.scalar(stmt)
+        except exc.SQLAlchemyError as e:
+            me = _create_db_error(e)
+            self._logger.error('Delete: favorite=%d, error=%s', profile_id, e)
+            raise me from e
+
+        self._logger.debug('Deleted favorite %r from %r', favorite, user)
+        return favorite
+
+    def get_favorite_count(self, user: User) -> int:
+        """Extracts a number of favorite profile records for a user.
+
+        Args:
+            user (User): User object.
+
+        Returns:
+            int: Number of favorite profile records for a user.
+
+        Raises:
+            DatabaseError: DB operational error.
+        """
+        self._logger.debug('Extracting favorite count for %r', user)
+        try:
+            stmt = (
+                sa.select(func.count())
+                .join(User.favorites)
+                .where(User.id == user.id)
+            )
+            count = self._session.scalar(stmt) or 0
+        except exc.SQLAlchemyError as e:
+            me = _create_db_error(e)
+            self._logger.error(
+                'Get favorite count: user=%r, error=%s',
+                user,
+                e,
+            )
+            raise me from e
+
+        self._logger.debug('Favorite count %d for %r', count, user)
+        return count
+
+    def get_favorites(self, user: User) -> Iterator[Favorite]:
+        """Extracts a sequence of all favorite records for a user.
+
+        Args:
+            user (User): User object.
+
+        Returns:
+            Iterable[Favorite]: Favorite records for the user.
+
+        Raises:
+            DatabaseError: DB operational error.
+        """
+        self._logger.debug('Extracting favorites for %r', user)
+        try:
+            # Get favorite count first
+            count = self.get_favorite_count(user)
+
+            # Now extract user favorites in batches
+            stmt = user.favorites.select().execution_options(yield_per=10)
+            favorites = self._session.scalars(stmt)
+        except exc.SQLAlchemyError as e:
+            me = _create_db_error(e)
+            self._logger.error(
+                'Get favorites error: user=%r, error=%s',
+                user,
+                e,
+            )
+            raise me from e
+
+        self._logger.debug('Extracted %d favorites for %r', count, user)
+        return favorites
+
+    def add_favorite_list_progress(
+        self,
+        progress: FavoriteListProgress,
+    ) -> FavoriteListProgress:
+        """Save a favorite list progress instance for user.
+
+        Args:
+            progress (FavoriteListProgress): Progress object.
+
+        Returns:
+            FavoriteListProgress: Progress object now associated with session.
+
+        Raises:
+            DatabaseError: DB operational error.
+        """
+        self._logger.debug('Saving: %r', progress)
+        try:
+            self._session.add(progress)
+        except exc.SQLAlchemyError as e:
+            me = _create_db_error(e)
+            self._logger.error(
+                'Add favorite list progress: progress=%r, error=%s',
+                progress,
+                e,
+            )
+            raise me from e
+
+        self._logger.debug('Saved: %r', progress)
+        return progress
+
+    def get_favorite_list_progress(
+        self,
+        user: User,
+    ) -> FavoriteListProgress | None:
+        """For given user return theirs add favorite list progress.
+
+        Args:
+            user (User): User object.
+
+        Returns:
+            FavoriteListProgress | None: Favorite list progress if any.
+
+        Raises:
+            ModelError: Model operational error.
+        """
+        self._logger.debug('Extracting favorite list progress for %r', user)
+        try:
+            stmt = sa.select(FavoriteListProgress).where(
+                FavoriteListProgress.user_id == user.id,
+            )
+            progress = self._session.scalar(stmt)
+        except exc.SQLAlchemyError as e:
+            me = _create_db_error(e)
+            self._logger.error(
+                'Get favorite list progress error: user=%r, error=%s',
+                user,
+                e,
+            )
+            raise me from e
+
+        self._logger.debug('Extracted: %r', progress)
+        return progress
+
+    def delete_favorite_list_progress(
+        self,
+        user: User,
+    ) -> FavoriteListProgress | None:
+        """For given user delete theirs add favorite list progress.
+
+        Args:
+            user (User): User object.
+
+        Returns:
+            FavoriteListProgress | None: Favorite list progress deleted
+                from the model if any.
+
+        Raises:
+            ModelError: Model operational error.
+        """
+        self._logger.debug('Deleting favorite list progress for %r', user)
+        try:
+            stmt = (
+                sa.delete(FavoriteListProgress)
+                .where(FavoriteListProgress.user_id == user.id)
+                .returning(FavoriteListProgress)
+            )
+            progress = self._session.scalar(stmt)
+        except exc.SQLAlchemyError as e:
+            me = _create_db_error(e)
+            self._logger.error(
+                'Delete favorite list progress error: user=%r, error=%s',
+                user,
+                e,
+            )
+            raise me from e
+
+        self._logger.debug('Deleted: %r', progress)
+        return progress
 
 
 class Database:
