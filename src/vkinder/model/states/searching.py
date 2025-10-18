@@ -3,7 +3,6 @@
 from collections.abc import Iterator
 from typing import Final, override
 
-from vkinder.controller.vk_service import VkServiceError
 from vkinder.model import ModelError
 from vkinder.shared_types import Favorite
 from vkinder.shared_types import InputMessage
@@ -15,6 +14,7 @@ from vkinder.shared_types import User
 from vkinder.shared_types import UserSearchQuery
 
 from ..db import DatabaseSession
+from .profile_provider import ProfileProviderError
 from .state import State
 
 SEARCH_AGE_MAX_GAP = 1
@@ -68,8 +68,8 @@ class SearchingState(State):
 
         # Everything is OK, try to search
         try:
-            profile = self.vk.search_user(query)
-        except VkServiceError:
+            profile = self.provider.search_user(query)
+        except ProfileProviderError:
             yield ResponseFactory.search_error()
             yield from self._manager.start_main_menu(session, message)
             return

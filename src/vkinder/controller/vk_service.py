@@ -15,6 +15,7 @@ from vk_api.longpoll import VkLongPoll
 from vkinder.config import VkConfig
 from vkinder.exceptions import VkinderError
 from vkinder.log import get_logger
+from vkinder.model import ProfileProviderError
 from vkinder.shared_types import ButtonColor
 from vkinder.shared_types import Keyboard
 from vkinder.shared_types import Media
@@ -207,7 +208,7 @@ class VkMessagesSendParams(TypedDict):
     attachment: NotRequired[str]
 
 
-class VkServiceError(VkinderError):
+class VkServiceError(ProfileProviderError, VkinderError):
     """Error when using VK service."""
 
 

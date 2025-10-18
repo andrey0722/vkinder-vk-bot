@@ -12,20 +12,19 @@ from ..db import DatabaseSession
 from .favorite_list import FavoriteListState
 from .main_menu import MainMenuState
 from .new_user import NewUserState
+from .profile_provider import ProfileProvider
 from .searching import SearchingState
 
 if TYPE_CHECKING:
-    from vkinder.controller import VkService
-
     from .state import State
 
 
 class StateManager:
     """Controls controller state transition for users."""
 
-    def __init__(self, vk: 'VkService') -> None:
+    def __init__(self, provider: ProfileProvider) -> None:
         """Initialize state manager object."""
-        self._vk = vk
+        self._provider = provider
         self._states: dict[UserState, State] = {
             UserState.NEW_USER: NewUserState(self),
             UserState.MAIN_MENU: MainMenuState(self),
@@ -34,13 +33,13 @@ class StateManager:
         }
 
     @property
-    def vk(self) -> 'VkService':
-        """Returns VK service object for the controller.
+    def provider(self) -> ProfileProvider:
+        """Returns profile provider object.
 
         Returns:
-            VkService: VK service object.
+            ProfileProvider: Profile provider object.
         """
-        return self._vk
+        return self._provider
 
     def start(
         self,

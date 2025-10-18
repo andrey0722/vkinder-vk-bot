@@ -3,15 +3,15 @@
 from collections.abc import Iterator
 from typing import override
 
-from vkinder.controller.vk_service import VkServiceError
 from vkinder.model import ModelError
+from vkinder.model.db import DatabaseSession
+from vkinder.model.types import FavoriteListProgress
 from vkinder.shared_types import InputMessage
 from vkinder.shared_types import MenuToken
 from vkinder.shared_types import Response
 from vkinder.shared_types import ResponseFactory
 
-from ..db import DatabaseSession
-from ..db import FavoriteListProgress
+from .profile_provider import ProfileProviderError
 from .state import State
 
 
@@ -120,7 +120,7 @@ class FavoriteListState(State):
         """
         try:
             yield from self._show_internal(session, message, index)
-        except (ModelError, VkServiceError):
+        except (ModelError, ProfileProviderError):
             self._logger.error('Failed to extract favorite profile')
             yield ResponseFactory.favorite_list_failed()
             yield from self._manager.start_main_menu(session, message)
@@ -161,16 +161,17 @@ class FavoriteListState(State):
             yield from self._manager.start_main_menu(session, message)
             return
 
-        profile = self.vk.get_user_profile(record.profile_id)
+        profile_id = record.profile_id
+        profile = self.provider.get_user_profile(profile_id)
 
         # Save progress in this mode
         with session.begin():
             progress = FavoriteListProgress(
                 user=user,
                 index=index,
-                profile_id=profile.id,
+                profile_id=profile_id,
             )
             session.add_favorite_list_progress(progress)
 
         yield ResponseFactory.favorite_result(profile, index + 1, count)
-        yield from self.attach_profile_photos(profile.id)
+        yield from self.attach_profile_photos(profile_id)

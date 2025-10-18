@@ -4,7 +4,6 @@ import abc
 from collections.abc import Iterator
 from typing import TYPE_CHECKING
 
-from vkinder.controller.vk_service import VkServiceError
 from vkinder.log import get_logger
 from vkinder.model.db import DatabaseSession
 from vkinder.shared_types import MENU_OPTIONS
@@ -13,9 +12,10 @@ from vkinder.shared_types import MenuToken
 from vkinder.shared_types import Response
 from vkinder.shared_types import ResponseFactory
 
-if TYPE_CHECKING:
-    from vkinder.controller import VkService
+from .profile_provider import ProfileProvider
+from .profile_provider import ProfileProviderError
 
+if TYPE_CHECKING:
     from .state_manager import StateManager
 
 
@@ -37,13 +37,13 @@ class State(abc.ABC):
         self._logger = get_logger(self)
 
     @property
-    def vk(self) -> 'VkService':
-        """Returns VK service object for the state.
+    def provider(self) -> ProfileProvider:
+        """Returns profile provider object for the state.
 
         Returns:
-            VkService: VK service object.
+            ProfileProvider: Profile provider object.
         """
-        return self._manager.vk
+        return self._manager.provider
 
     @abc.abstractmethod
     def start(
@@ -122,12 +122,12 @@ class State(abc.ABC):
             Iterator[Response]: Bot responses to the user.
         """
         try:
-            photos = self.vk.get_user_photos(
+            photos = self.provider.get_user_photos(
                 user_id=profile_id,
                 sort_by_likes=True,
                 limit=3,
             )
-        except VkServiceError:
+        except ProfileProviderError:
             self._logger.warning('Failed to fetch profile photos')
             yield ResponseFactory.photo_failed()
         else:
