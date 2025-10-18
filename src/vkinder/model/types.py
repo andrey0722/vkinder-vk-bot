@@ -56,6 +56,9 @@ class User(ModelBaseType):
     birthday: Mapped[datetime.date | None] = orm.mapped_column()
     """User specified birthday."""
 
+    birthday_raw: Mapped[str | None] = orm.mapped_column()
+    """User specified birthday in raw format."""
+
     city_id: Mapped[int | None] = orm.mapped_column()
     """User specified city ID."""
 

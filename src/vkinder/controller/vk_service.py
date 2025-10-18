@@ -594,12 +594,14 @@ def _convert_user(user: VkUser) -> User:
     user_id = user['id']
     url = user.get('domain') or f'id{user_id}'
     city = user.get('city')
+    bdate = user.get('bdate')
     return User(
         id=user_id,
         first_name=user['first_name'],
         last_name=user['last_name'],
         sex=_convert_sex(user.get('sex')),
-        birthday=_convert_bdate(user.get('bdate')),
+        birthday=_convert_bdate(bdate),
+        birthday_raw=bdate,
         city_id=city and city['id'],
         city=city and city['title'],
         nickname=user.get('nickname'),

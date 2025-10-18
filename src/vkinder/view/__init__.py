@@ -343,6 +343,7 @@ def _format_profile(user: User, *, heading: str) -> str:
         str: Formatted user profile.
     """
     birthday = user.birthday and user.birthday.strftime(BIRTHDAY_FORMAT)
+    birthday = birthday or user.birthday_raw
     return Strings.USER_PROFILE_TEMPLATE.format(
         heading=heading,
         first_name=user.first_name or Strings.NOT_SPECIFIED,
