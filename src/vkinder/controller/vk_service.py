@@ -173,11 +173,12 @@ type VkUsersGetResult = list[VkUser]
 """VK response object for 'users.get' API method."""
 
 
-class VkUsersSearchParams(VkHasCount):
+class VkUsersSearchParams(TypedDict):
     """Parameters for 'users.search' API method."""
 
-    offset: int
-    fields: str
+    count: NotRequired[int]
+    offset: NotRequired[int]
+    fields: NotRequired[str]
     sex: NotRequired[VkSex]
     city: NotRequired[int]
     online: NotRequired[bool]
@@ -297,6 +298,34 @@ class VkService:
             )
             raise VkApiError(e) from e
 
+    def get_search_result_size(self, query: UserSearchQuery) -> int:
+        """Requests number of user profiles in search result for query.
+
+        Args:
+            query (UserSearchQuery): Search query object.
+
+        Raises:
+            VkApiError: Error when using VK API.
+
+        Returns:
+            int: Number of user profiles in search result.
+        """
+        self._logger.debug('Getting search result size for query %r', query)
+        params = VkUsersSearchParams(count=0)
+        _add_search_query(params, query)
+
+        try:
+            response = self._vk_user.method('users.search', params)
+        except vk_api.exceptions.VkApiError as e:
+            self._logger.error('Get search result size error: %s', e)
+            raise VkApiError(e) from e
+
+        # Use type checker for VK API response
+        response = cast(VkUsersSearchResult, response)
+        count = response['count']
+        self._logger.debug('Search result size %d for query %r', count, query)
+        return count
+
     def search_user(self, query: UserSearchQuery) -> User | None:
         """Perform user search using specified search query.
 
@@ -311,25 +340,22 @@ class VkService:
         """
         self._logger.debug('Searching users with query %r', query)
 
-        random_offset = random.randint(0, 999)
+        # To extract random user we must know number of users in search result
+        total = self.get_search_result_size(query)
+        if not total:
+            self._logger.warning('No results for query %r', query)
+            return None
+
+        # VK API limits search query results to 1000 no matter what
+        effective_total = min(total, 1000)
+        random_offset = random.randint(0, effective_total)
 
         params = VkUsersSearchParams(
             count=1,
             offset=random_offset,
             fields=_REQUEST_USER_FIELDS,
         )
-        if query.sex is not None:
-            params['sex'] = _SEX_TO_VK_SEX[query.sex]
-        if query.city_id is not None:
-            params['city'] = query.city_id
-        if query.online is not None:
-            params['online'] = query.online
-        if query.has_photo is not None:
-            params['has_photo'] = query.has_photo
-        if query.age_min is not None:
-            params['age_from'] = query.age_min
-        if query.age_max is not None:
-            params['age_to'] = query.age_max
+        _add_search_query(params, query)
 
         try:
             response = self._vk_user.method('users.search', params)
@@ -440,7 +466,7 @@ class VkService:
                     owner_id=photo['owner_id'],
                     likes=photo['likes']['count'],
                     url=orig_photo['url'],
-                )
+                ),
             )
 
         # Postprocess result list
@@ -686,3 +712,27 @@ def _get_photo_source(photo: VkPhoto) -> VkPhotoSource:
 
     # Fallback option: use the photo of most size (pixel count)
     return max(photo['sizes'], key=lambda x: x['width'] * x['height'])
+
+
+def _add_search_query(
+    params: VkUsersSearchParams,
+    query: UserSearchQuery,
+) -> None:
+    """Internal helper to add data from search query to API call parameters.
+
+    Args:
+        params (VkUsersSearchParams): API call parameters.
+        query (UserSearchQuery): User search query object.
+    """
+    if query.sex is not None:
+        params['sex'] = _SEX_TO_VK_SEX[query.sex]
+    if query.city_id is not None:
+        params['city'] = query.city_id
+    if query.online is not None:
+        params['online'] = query.online
+    if query.has_photo is not None:
+        params['has_photo'] = query.has_photo
+    if query.age_min is not None:
+        params['age_from'] = query.age_min
+    if query.age_max is not None:
+        params['age_to'] = query.age_max
