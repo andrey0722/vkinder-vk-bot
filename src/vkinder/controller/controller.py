@@ -18,7 +18,7 @@ from vkinder.shared_types import InputMessage
 from vkinder.shared_types import Response
 from vkinder.shared_types import UserAuthData
 from vkinder.view import normalize_menu_command
-from vkinder.view import render_squashed_messages
+from vkinder.view import render_messages
 from vkinder.view.strings import Command
 
 from .auth_service import AuthService
@@ -125,7 +125,7 @@ class Controller:
             responses = handler(session, message)
 
             # Squash all messages from handler to small number of messages
-            messages = render_squashed_messages(message.user, responses)
+            messages = render_messages(message.user, responses)
             for message in messages:
                 try:
                     vk.send(message)

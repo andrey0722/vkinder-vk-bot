@@ -205,6 +205,9 @@ class ResponseType(enum.IntEnum):
     FAVORITE_RESULT = enum.auto()
     """Show user's favorite list entry."""
 
+    TEXT = enum.auto()
+    """Show text string to user."""
+
     KEYBOARD = enum.auto()
     """Set keyboard for the bot message."""
 
@@ -285,6 +288,23 @@ class ResponseWithUserIndex:
     """Allow response message to be squashed with others."""
 
 
+type ResponseTypesWithText = Literal[
+    ResponseType.TEXT,
+]
+"""All responses supporting `text` field."""
+
+
+@dataclasses.dataclass
+class ResponseWithText:
+    """State result with text as parameter."""
+
+    type: ResponseTypesWithText
+    text: str
+
+    allow_squash: bool = True
+    """Allow response message to be squashed with others."""
+
+
 type ResponseTypesWithMenuOptions = Literal[
     ResponseType.MENU_HELP,
 ]
@@ -340,6 +360,7 @@ type Response = (
     ResponseGeneric
     | ResponseWithUser
     | ResponseWithUserIndex
+    | ResponseWithText
     | ResponseWithMenuOptions
     | ResponseWithKeyboard
     | ResponseWithMedia
@@ -645,6 +666,28 @@ class ResponseFactory:
             user=profile,
             index=index,
             total=total,
+            allow_squash=allow_squash,
+        )
+
+    @staticmethod
+    def text(
+        text: str,
+        *,
+        allow_squash: bool = True,
+    ) -> Response:
+        """Show text string to user.
+
+        Args:
+            text (str): Text to show to user.
+            allow_squash (bool, optional): Allow response message to be
+                squashed with others. Defaults to True.
+
+        Returns:
+            Response: Bot response to user.
+        """
+        return ResponseWithText(
+            type=ResponseType.TEXT,
+            text=text,
             allow_squash=allow_squash,
         )
 
