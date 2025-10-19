@@ -11,6 +11,12 @@
             "program": "${workspaceFolder}${/}src${/}main.py",
         },
         {
+            "name": "(vkinder) test.py",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}${/}test.py",
+        },
+        {
             "name": "(vkinder) Current file",
             "type": "debugpy",
             "request": "launch",
