@@ -599,7 +599,10 @@ class Database:
         Returns:
             Engine: DB engine object.
         """
-        engine = sa.create_engine(self._create_dsn(config))
+        engine = sa.create_engine(
+            self._create_dsn(config),
+            hide_parameters=True,
+        )
         set_sqlalchemy_debug_filter(engine)
         return engine
 
