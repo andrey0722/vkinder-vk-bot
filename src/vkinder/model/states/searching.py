@@ -1,44 +1,55 @@
 """This module shows search results to user and handles user commands."""
 
 from collections.abc import Iterator
-from typing import Final, override
+from typing import ClassVar, Final, override
 
 from vkinder.model import ModelError
+from vkinder.model.db import DatabaseSession
+from vkinder.shared_types import ButtonColor
 from vkinder.shared_types import Favorite
 from vkinder.shared_types import InputMessage
+from vkinder.shared_types import Keyboard
 from vkinder.shared_types import MenuToken
 from vkinder.shared_types import Response
 from vkinder.shared_types import ResponseFactory
 from vkinder.shared_types import Sex
+from vkinder.shared_types import TextButton
 from vkinder.shared_types import User
 from vkinder.shared_types import UserSearchQuery
 
-from ..db import DatabaseSession
 from .profile_provider import ProfileProviderError
+from .profile_provider import ProfileProviderTokenError
 from .state import State
 
 SEARCH_AGE_MAX_GAP = 1
 """Maximum age gap to use in profile search."""
 
 
-class SearchCriteriaError(ModelError):
-    """Error when computing user search criteria."""
-
-
-class UserSexNotKnownError(SearchCriteriaError):
-    """User has not specified their sex in the user profile."""
-
-
-class UserCityNotKnownError(SearchCriteriaError):
-    """User has not specified their city in the user profile."""
-
-
-class UserBirthdayNotKnownError(SearchCriteriaError):
-    """User has not specified their birthday in the user profile."""
-
-
 class SearchingState(State):
     """Shows search results to user and handles user commands."""
+
+    KEYBOARD: ClassVar[Keyboard] = Keyboard(
+        one_time=False,
+        button_rows=[
+            [
+                TextButton(MenuToken.NEXT, ButtonColor.PRIMARY),
+                TextButton(MenuToken.ADD_FAVORITE),
+            ],
+            [
+                TextButton(MenuToken.GO_BACK),
+                TextButton(MenuToken.HELP),
+            ],
+        ],
+    )
+    """Bot keyboard for this user state."""
+
+    MENU_OPTIONS: ClassVar[tuple[MenuToken, ...]] = (
+        MenuToken.NEXT,
+        MenuToken.ADD_FAVORITE,
+        MenuToken.GO_BACK,
+        MenuToken.HELP,
+    )
+    """Menu commands accepted for this user state."""
 
     @override
     def start(
@@ -49,26 +60,31 @@ class SearchingState(State):
         with session.begin():
             user = message.user
         self._logger.info('Starting for user %d', user.id)
+        yield self.show_keyboard(user)
+
+        # Check user authorization
+        with session.begin():
+            auth_data = session.get_auth_data(user.id)
+            token = auth_data and auth_data.access_token
+        if not token:
+            # Request authorization from user
+            yield from self._manager.start_auth(session, message)
+            return
 
         # Try to calculate user search criteria
-        try:
-            query = self._get_search_query(user)
-        except SearchCriteriaError as e:
-            self._logger.error('Failed to create search criteria')
-            if isinstance(e, UserSexNotKnownError):
-                yield ResponseFactory.user_sex_missing()
-            elif isinstance(e, UserCityNotKnownError):
-                yield ResponseFactory.user_city_missing()
-            elif isinstance(e, UserBirthdayNotKnownError):
-                yield ResponseFactory.user_birthday_missing()
-            else:
-                raise NotImplementedError from e
+        query = self._get_search_query(user)
+        if not isinstance(query, UserSearchQuery):
+            yield query
             yield from self._manager.start_main_menu(session, message)
             return
 
         # Everything is OK, try to search
         try:
-            profile = self.provider.search_user(query)
+            profile = self.profile_provider.search_user(query, token)
+        except ProfileProviderTokenError:
+            # Problem with the token
+            yield from self._manager.start_auth(session, message)
+            return
         except ProfileProviderError:
             yield ResponseFactory.search_error()
             yield from self._manager.start_main_menu(session, message)
@@ -81,12 +97,12 @@ class SearchingState(State):
             # Save profile id to be able to add it to favorite list
             try:
                 with session.begin():
-                    user.last_found_id = profile_id
-                    session.update_user(user)
+                    progress = message.progress
+                    progress.last_found_id = profile_id
             except ModelError:
                 self._logger.warning('Failed to save last found profile')
             yield ResponseFactory.search_result(profile)
-            yield from self.attach_profile_photos(profile.id)
+            yield from self.attach_profile_photos(profile.id, token)
         else:
             yield ResponseFactory.search_failed()
             yield from self._manager.start_main_menu(session, message)
@@ -101,6 +117,7 @@ class SearchingState(State):
             user = message.user
         text = message.text
         self._logger.info('User %d selected in search menu: %r', user.id, text)
+        yield self.show_keyboard(user)
 
         if not self.is_command_accepted(message):
             yield from self.unknown_command(session, message)
@@ -113,12 +130,13 @@ class SearchingState(State):
 
             case MenuToken.ADD_FAVORITE:
                 yield from self._add_favorite(session, message)
+                yield ResponseFactory.select_menu()
 
             case MenuToken.GO_BACK:
                 yield from self._manager.start_main_menu(session, message)
 
             case MenuToken.HELP:
-                yield ResponseFactory.menu_help()
+                yield ResponseFactory.menu_help(self.MENU_OPTIONS)
 
     _SEARCH_SEX_MAP: Final[dict[Sex, Sex]] = {
         Sex.FEMALE: Sex.MALE,
@@ -126,34 +144,30 @@ class SearchingState(State):
     }
     """Mapping for sex selection in search query."""
 
-    def _get_search_query(self, user: User) -> UserSearchQuery:
+    def _get_search_query(self, user: User) -> UserSearchQuery | Response:
         """Internal helper to calculate query parameters for given user.
 
         Args:
             user (User): User object.
 
-        Raises:
-            UserSexNotKnownError: User sex is not known.
-            UserCityNotKnownError: User city is not known.
-
         Returns:
-            UserSearchQuery: User search query object.
+            UserSearchQuery | Response: User search query object or error.
         """
         try:
             sex = self._SEARCH_SEX_MAP[user.sex]
-        except KeyError as e:
+        except KeyError:
             self._logger.error('User sex is missing')
-            raise UserSexNotKnownError from e
+            return ResponseFactory.user_sex_missing()
 
         city_id = user.city_id
         if city_id is None:
             self._logger.error('User city is missing')
-            raise UserCityNotKnownError
+            return ResponseFactory.user_city_missing()
 
         age = user.age
         if age is None:
             self._logger.error('User birthday is missing')
-            raise UserBirthdayNotKnownError
+            return ResponseFactory.user_birthday_missing()
         self._logger.debug('User age is %d', age)
 
         return UserSearchQuery(
@@ -181,7 +195,7 @@ class SearchingState(State):
         """
         user = message.user
         user_id = user.id
-        profile_id = user.last_found_id
+        profile_id = message.progress.last_found_id
         if profile_id is not None:
             try:
                 with session.begin():
@@ -193,9 +207,9 @@ class SearchingState(State):
                     user_id,
                 )
             else:
-                yield ResponseFactory.added_to_favorite(allow_squash=False)
+                yield ResponseFactory.added_to_favorite()
                 return
         else:
             self._logger.error('No saved last found for user %d', user_id)
 
-        yield ResponseFactory.add_to_favorite_failed(allow_squash=False)
+        yield ResponseFactory.add_to_favorite_failed()

@@ -2,25 +2,25 @@
 
 from collections.abc import Iterable
 from collections.abc import Iterator
+from collections.abc import Sequence
 from typing import Final
 
-from vkinder.shared_types import MENU_OPTIONS
-from vkinder.shared_types import Button
-from vkinder.shared_types import ButtonColor
 from vkinder.shared_types import Keyboard
 from vkinder.shared_types import Media
 from vkinder.shared_types import MenuToken
+from vkinder.shared_types import OpenLinkButton
 from vkinder.shared_types import OutputMessage
 from vkinder.shared_types import Response
 from vkinder.shared_types import ResponseGeneric
 from vkinder.shared_types import ResponseType
 from vkinder.shared_types import ResponseTypesGeneric
+from vkinder.shared_types import ResponseWithKeyboard
 from vkinder.shared_types import ResponseWithMedia
+from vkinder.shared_types import ResponseWithMenuOptions
 from vkinder.shared_types import ResponseWithUser
 from vkinder.shared_types import ResponseWithUserIndex
-from vkinder.shared_types import TextAction
+from vkinder.shared_types import TextButton
 from vkinder.shared_types import User
-from vkinder.shared_types import UserState
 
 from .strings import BIRTHDAY_FORMAT
 from .strings import BOOL_MAP
@@ -39,6 +39,8 @@ _STR_TO_MENU_TOKEN: Final[dict[MenuTokenStr, MenuToken]] = {
     MenuTokenStr.DELETE_FAVORITE: MenuToken.DELETE_FAVORITE,
     MenuTokenStr.ADD_FAVORITE: MenuToken.ADD_FAVORITE,
     MenuTokenStr.GO_BACK: MenuToken.GO_BACK,
+    MenuTokenStr.AUTH_BEGIN: MenuToken.AUTH_BEGIN,
+    MenuTokenStr.AUTH_FINISHED: MenuToken.AUTH_FINISHED,
 }
 
 _MENU_TOKEN_TO_STR: Final[dict[MenuToken, MenuTokenStr]] = {
@@ -64,6 +66,26 @@ def normalize_menu_command(text: str) -> str:
     except KeyError as e:
         raise NotImplementedError from e
     return token
+
+
+def render_menu_command(text: str) -> str:
+    """Replace menu token in output message with a text string.
+
+    Args:
+        text (str): Output text message.
+
+    Returns:
+        str: Updated text message.
+    """
+    try:
+        token = MenuToken(text)
+    except ValueError:
+        return text
+    try:
+        token_str = _MENU_TOKEN_TO_STR[token]
+    except KeyError as e:
+        raise NotImplementedError from e
+    return token_str
 
 
 def render_squashed_messages(
@@ -123,22 +145,26 @@ def render_message(user: User, response: Response) -> OutputMessage:
         return _render_with_user(user, response)
     if isinstance(response, ResponseWithUserIndex):
         return _render_with_user_index(user, response)
+    if isinstance(response, ResponseWithMenuOptions):
+        return _render_with_menu_options(user, response)
+    if isinstance(response, ResponseWithKeyboard):
+        return _render_with_keyboard(user, response)
     if isinstance(response, ResponseWithMedia):
         return _render_with_media(user, response)
     raise NotImplementedError
 
 
-def _format_menu(state: UserState) -> str:
+def _format_menu(menu_options: Sequence[MenuToken]) -> str:
     """Internal helper to format menu help for user state.
 
     Args:
-        state (UserState): User state.
+        menu_options (Sequence[MenuToken]): Menu options.
 
     Returns:
         str: Menu help text.
     """
     result: list[str] = []
-    for token in MENU_OPTIONS[state]:
+    for token in menu_options:
         token_str = _MENU_TOKEN_TO_STR[token]
         help_text = HELP_MAP[token_str]
         result.append(
@@ -147,12 +173,7 @@ def _format_menu(state: UserState) -> str:
                 help=help_text,
             ),
         )
-    return '\n'.join(result)
-
-
-_MENU_HELP_MAP: Final[dict[UserState, str]] = {
-    state: _format_menu(state) for state in MENU_OPTIONS
-}
+    return Strings.HELP_RECORD_SEPARATOR.join(result)
 
 
 _GENERIC_TO_TEXT: Final[dict[ResponseTypesGeneric, str]] = {
@@ -163,6 +184,8 @@ _GENERIC_TO_TEXT: Final[dict[ResponseTypesGeneric, str]] = {
     ResponseType.USER_BIRTHDAY_MISSING: Strings.USER_BIRTHDAY_MISSING,
     ResponseType.SEARCH_FAILED: Strings.SEARCH_FAILED,
     ResponseType.SEARCH_ERROR: Strings.SEARCH_ERROR,
+    ResponseType.AUTH_REQUIRED: Strings.AUTH_REQUIRED,
+    ResponseType.AUTH_NOT_COMPLETED: Strings.AUTH_NOT_COMPLETED,
     ResponseType.ADDED_TO_FAVORITE: Strings.ADDED_TO_FAVORITE,
     ResponseType.ADD_TO_FAVORITE_FAILED: Strings.ADD_TO_FAVORITE_FAILED,
     ResponseType.FAVORITE_LIST_FAILED: Strings.FAVORITE_LIST_FAILED,
@@ -184,9 +207,8 @@ def _render_generic(user: User, response: ResponseGeneric) -> OutputMessage:
     try:
         text = _GENERIC_TO_TEXT[response.type]
     except KeyError as e:
+        # Dynamically computed responses
         match response.type:
-            case ResponseType.MENU_HELP:
-                text = _MENU_HELP_MAP[user.state]
             case _:
                 raise NotImplementedError from e
     return _create_message(user, text)
@@ -252,6 +274,62 @@ def _render_with_user_index(
     raise NotImplementedError
 
 
+def _render_with_menu_options(
+    user: User,
+    response: ResponseWithMenuOptions,
+) -> OutputMessage:
+    """Internal helper to render messages with `menu_options` parameter.
+
+    Args:
+        user (User): User object.
+        response (ResponseWithMenuOptions): Bot response object.
+
+    Returns:
+        OutputMessage: Bot output message.
+    """
+    match response.type:
+        case ResponseType.MENU_HELP:
+            return _create_message(user, _format_menu(response.menu_options))
+
+    raise NotImplementedError
+
+
+def _render_keyboard(keyboard: Keyboard) -> None:
+    """Process all keyboard button and prepare them to be sent to user.
+
+    Args:
+        keyboard (Keyboard): Bot keyboard object.
+    """
+    for row in keyboard.button_rows:
+        for button in row:
+            if isinstance(button, (TextButton, OpenLinkButton)):
+                button.text = render_menu_command(button.text)
+            else:
+                raise NotImplementedError
+
+
+def _render_with_keyboard(
+    user: User,
+    response: ResponseWithKeyboard,
+) -> OutputMessage:
+    """Internal helper to render messages with `keyboard` parameter.
+
+    Args:
+        user (User): User object.
+        response (ResponseWithKeyboard): Bot response object.
+
+    Returns:
+        OutputMessage: Bot output message.
+    """
+    match response.type:
+        case ResponseType.KEYBOARD:
+            keyboard = response.keyboard
+            _render_keyboard(keyboard)
+            return _create_message(user, keyboard=keyboard)
+
+    raise NotImplementedError
+
+
 def _render_with_media(
     user: User,
     response: ResponseWithMedia,
@@ -294,7 +372,7 @@ def _create_message(
     return OutputMessage(
         user=user,
         text=text,
-        keyboard=keyboard or _get_keyboard(user.state),
+        keyboard=keyboard,
         media=media or [],
     )
 
@@ -357,65 +435,3 @@ def _format_profile(user: User, *, heading: str) -> str:
         url=user.url,
         online=BOOL_MAP[user.online],
     )
-
-
-_USER_STATE_KEYBOARDS: Final[dict[UserState, Keyboard]] = {
-    UserState.MAIN_MENU: Keyboard(
-        one_time=False,
-        button_rows=[
-            [
-                Button(TextAction(MenuTokenStr.SEARCH), ButtonColor.PRIMARY),
-                Button(TextAction(MenuTokenStr.PROFILE)),
-            ],
-            [
-                Button(TextAction(MenuTokenStr.FAVORITE)),
-                Button(TextAction(MenuTokenStr.HELP)),
-            ],
-        ],
-    ),
-    UserState.SEARCHING: Keyboard(
-        one_time=False,
-        button_rows=[
-            [
-                Button(TextAction(MenuTokenStr.NEXT), ButtonColor.PRIMARY),
-                Button(TextAction(MenuTokenStr.ADD_FAVORITE)),
-            ],
-            [
-                Button(TextAction(MenuTokenStr.GO_BACK)),
-                Button(TextAction(MenuTokenStr.HELP)),
-            ],
-        ],
-    ),
-    UserState.FAVORITE_LIST: Keyboard(
-        one_time=False,
-        button_rows=[
-            [
-                Button(TextAction(MenuTokenStr.PREV)),
-                Button(TextAction(MenuTokenStr.NEXT)),
-            ],
-            [
-                Button(
-                    action=TextAction(MenuTokenStr.DELETE_FAVORITE),
-                    color=ButtonColor.NEGATIVE,
-                ),
-            ],
-            [
-                Button(TextAction(MenuTokenStr.GO_BACK)),
-                Button(TextAction(MenuTokenStr.HELP)),
-            ],
-        ],
-    ),
-}
-"""Bot keyboard for each user state."""
-
-
-def _get_keyboard(state: UserState) -> Keyboard | None:
-    """Get bot keyboard for a particular user state.
-
-    Args:
-        state (UserState): User state.
-
-    Returns:
-        Keyboard | None: Bot keyboard if any.
-    """
-    return _USER_STATE_KEYBOARDS.get(state)

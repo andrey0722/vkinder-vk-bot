@@ -3,11 +3,11 @@
 from collections.abc import Iterator
 from typing import override
 
+from vkinder.model.db import DatabaseSession
 from vkinder.shared_types import InputMessage
 from vkinder.shared_types import Response
 from vkinder.shared_types import ResponseFactory
 
-from ..db import DatabaseSession
 from .main_menu import MainMenuState
 
 

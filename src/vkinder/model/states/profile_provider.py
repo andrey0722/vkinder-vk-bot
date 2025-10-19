@@ -13,8 +13,31 @@ class ProfileProviderError(VkinderError):
     """Base class for all profile provider errors."""
 
 
+class ProfileProviderTokenError(VkinderError):
+    """Error occurred because access token is invalid."""
+
+
 class ProfileProvider(Protocol):
     """Provides means to get profile info."""
+
+    @abc.abstractmethod
+    def get_user_access_rights(self) -> str:
+        """Returns required access right set for user account.
+
+        Returns:
+            str: Access right set.
+        """
+
+    @abc.abstractmethod
+    def validate_access_token(self, access_token: str | None) -> bool:
+        """Tests if provided user access token is valid for API calls.
+
+        Args:
+            access_token (str | None): User access token.
+
+        Returns:
+            bool: `True` if valid, otherwise `False`.
+        """
 
     @abc.abstractmethod
     def get_user_profile(self, user_id: int) -> User:
@@ -24,6 +47,7 @@ class ProfileProvider(Protocol):
             user_id (int): User profile id.
 
         Raises:
+            ProfileProviderTokenError: Access token is invalid.
             ProfileProviderError: Failed to get user profile.
 
         Returns:
@@ -37,6 +61,7 @@ class ProfileProvider(Protocol):
         *,
         sort_by_likes: bool = False,
         limit: int | None = None,
+        access_token: str | None = None,
     ) -> list[Photo]:
         """Extracts user profile photos with optional sorting.
 
@@ -46,8 +71,11 @@ class ProfileProvider(Protocol):
                 descending order. Defaults to `False`.
             limit (int | None, optional): Limit result up to `limit`
                 photos if specified. Defaults to `None`.
+            access_token (str | None, optional): User access token for
+                API call. Defaults to None.
 
         Raises:
+            ProfileProviderTokenError: Access token is invalid.
             ProfileProviderError: Error when getting profile photos.
 
         Returns:
@@ -55,13 +83,20 @@ class ProfileProvider(Protocol):
         """
 
     @abc.abstractmethod
-    def search_user(self, query: UserSearchQuery) -> User | None:
+    def search_user(
+        self,
+        query: UserSearchQuery,
+        access_token: str | None = None,
+    ) -> User | None:
         """Perform user search using specified search query.
 
         Args:
             query (UserSearchQuery): Search query object.
+            access_token (str | None, optional): User access token for
+                API call. Defaults to None.
 
         Raises:
+            ProfileProviderTokenError: Access token is invalid.
             ProfileProviderError: Error when searching users.
 
         Returns:

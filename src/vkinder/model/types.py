@@ -22,6 +22,7 @@ class UserState(enum.StrEnum):
     NEW_USER = enum.auto()
     MAIN_MENU = enum.auto()
     SEARCHING = enum.auto()
+    AUTH = enum.auto()
     FAVORITE_LIST = enum.auto()
 
 
@@ -71,9 +72,6 @@ class User(ModelBaseType):
     url: Mapped[str] = orm.mapped_column(sa.String(64))
     """Short link to user profile page."""
 
-    last_found_id: Mapped[int| None] = orm.mapped_column(default=None)
-    """Profile id displayed to the user in last search query."""
-
     online: bool = dataclasses.field(default=False)
     """Whether user is online right now or not."""
 
@@ -83,6 +81,22 @@ class User(ModelBaseType):
     )
     """Current user state."""
 
+    auth_data: Mapped['UserAuthData | None'] = orm.relationship(
+        back_populates='user',
+        cascade='all, delete-orphan',
+        init=False,
+        repr=False,
+    )
+    """User authorization data."""
+
+    user_progress: Mapped['UserProgress | None'] = orm.relationship(
+        back_populates='user',
+        cascade='all, delete-orphan',
+        init=False,
+        repr=False,
+    )
+    """User authorization data."""
+
     favorites: WriteOnlyMapped['Favorite'] = orm.relationship(
         back_populates='user',
         cascade='all, delete-orphan',
@@ -91,16 +105,6 @@ class User(ModelBaseType):
         repr=False,
     )
     """User's favorite profile list."""
-
-    favorite_progress: Mapped['FavoriteListProgress | None'] = (
-        orm.relationship(
-            back_populates='user',
-            cascade='all, delete-orphan',
-            init=False,
-            repr=False,
-        )
-    )
-    """User progress in favorite list mode."""
 
     @property
     def age(self) -> int | None:
@@ -118,6 +122,63 @@ class User(ModelBaseType):
             # Birthday hasn't pass at this year
             age -= 1
         return age
+
+
+class UserAuthData(ModelBaseType):
+    """Holds data from user authorization."""
+
+    __tablename__ = 'auth_data'
+
+    user_id: Mapped[int] = orm.mapped_column(
+        sa.ForeignKey('user.id', ondelete='CASCADE'),
+        primary_key=True,
+    )
+    user: Mapped[User] = orm.relationship(
+        back_populates='auth_data',
+        init=False,
+        repr=False,
+    )
+    """Bot user that owns this record."""
+
+    access_token: Mapped[str] = orm.mapped_column(sa.String(400))
+    """VK API user access token."""
+
+    refresh_token: Mapped[str] = orm.mapped_column(sa.String(400))
+    """VK ID token to refresh access token."""
+
+    expire_time: Mapped[datetime.datetime] = orm.mapped_column(sa.DateTime)
+    """Time when user access token becomes invalidated."""
+
+    access_rights: Mapped[str] = orm.mapped_column(sa.String(400))
+    """Access right set allocated to user access token."""
+
+
+class UserProgress(ModelBaseType):
+    """Stores user progress in different modes."""
+
+    __tablename__ = 'user_progress'
+
+    user_id: Mapped[int] = orm.mapped_column(
+        sa.ForeignKey('user.id', ondelete='CASCADE'),
+        primary_key=True,
+        init=False,
+    )
+    user: Mapped[User] = orm.relationship(back_populates='user_progress')
+    """Bot user that owns this record."""
+
+    last_state: Mapped[UserState] = orm.mapped_column(
+        default=UserState.MAIN_MENU,
+    )
+    """Previous user state."""
+
+    last_found_id: Mapped[int] = orm.mapped_column(default=0)
+    """Profile id displayed to the user in last search query."""
+
+    last_fav_index: Mapped[int] = orm.mapped_column(default=0)
+    """Favorite record positional index."""
+
+    last_fav_id: Mapped[int] = orm.mapped_column(default=0)
+    """Profile id that the user has added as favorite."""
 
 
 class Favorite(ModelBaseType):
@@ -142,22 +203,3 @@ class Favorite(ModelBaseType):
         init=False,
     )
     """Date and time when this record was created."""
-
-class FavoriteListProgress(ModelBaseType):
-    """Stores user progress in favorite list mode."""
-
-    __tablename__ = 'favorite_list_progress'
-
-    user_id: Mapped[int] = orm.mapped_column(
-        sa.ForeignKey('user.id', ondelete='CASCADE'),
-        primary_key=True,
-        init=False,
-    )
-    user: Mapped[User] = orm.relationship(back_populates='favorite_progress')
-    """Bot user that owns this record."""
-
-    index: Mapped[int] = orm.mapped_column()
-    """Favorite record positional index."""
-
-    profile_id: Mapped[int] = orm.mapped_column()
-    """Profile id that the user has added as favorite."""

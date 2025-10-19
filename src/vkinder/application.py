@@ -4,6 +4,7 @@ This module defines the main class of the entire application and
 all connections between program components.
 """
 
+from vkinder.config import AuthConfig
 from vkinder.config import DatabaseConfig
 from vkinder.config import VkConfig
 from vkinder.controller import Controller
@@ -18,7 +19,11 @@ class Application:
         """Initialize application object."""
         self._logger = get_logger(self)
         self._db = Database(self._read_db_config())
-        self._controller = Controller(self._db, self._read_vk_config())
+        self._controller = Controller(
+            db=self._db,
+            vk_config=self._read_vk_config(),
+            auth_config=self._read_auth_config(),
+        )
 
     def run(self) -> None:
         """Start the bot and keep running until stopped."""
@@ -36,6 +41,14 @@ class Application:
             VkConfig: VK config.
         """
         return VkConfig()
+
+    def _read_auth_config(self) -> AuthConfig:
+        """Internal helper to read VK ID auth config.
+
+        Returns:
+            AuthConfig: VK ID auth config.
+        """
+        return AuthConfig()
 
     def _read_db_config(self) -> DatabaseConfig:
         """Internal helper to read database config.

@@ -1,32 +1,33 @@
 """This module defines data types that can be shared between components."""
 
-import abc
 from collections.abc import Sequence
 import dataclasses
 import enum
-from typing import Final, Literal
+from typing import Literal
 
 from vkinder.model.types import Favorite
 from vkinder.model.types import Sex
 from vkinder.model.types import User
+from vkinder.model.types import UserAuthData
+from vkinder.model.types import UserProgress
 from vkinder.model.types import UserState
 
 __all__ = (
     'Favorite',
     'Sex',
     'User',
+    'UserAuthData',
     'UserSearchQuery',
     'UserState',
     'MenuToken',
-    'MENU_OPTIONS',
     'Photo',
     'Button',
-    'ButtonAction',
     'ButtonColor',
     'InputMessage',
     'Keyboard',
     'OutputMessage',
-    'TextAction',
+    'TextButton',
+    'OpenLinkButton',
 )
 
 
@@ -43,30 +44,8 @@ class MenuToken(enum.StrEnum):
     DELETE_FAVORITE = enum.auto()
     ADD_FAVORITE = enum.auto()
     GO_BACK = enum.auto()
-
-
-MENU_OPTIONS: Final[dict[UserState, tuple[MenuToken, ...]]] = {
-    UserState.MAIN_MENU: (
-        MenuToken.SEARCH,
-        MenuToken.PROFILE,
-        MenuToken.FAVORITE,
-        MenuToken.HELP,
-    ),
-    UserState.SEARCHING: (
-        MenuToken.NEXT,
-        MenuToken.ADD_FAVORITE,
-        MenuToken.GO_BACK,
-        MenuToken.HELP,
-    ),
-    UserState.FAVORITE_LIST: (
-        MenuToken.PREV,
-        MenuToken.NEXT,
-        MenuToken.DELETE_FAVORITE,
-        MenuToken.GO_BACK,
-        MenuToken.HELP,
-    ),
-}
-"""Commands in menu for each user state."""
+    AUTH_BEGIN = enum.auto()
+    AUTH_FINISHED = enum.auto()
 
 
 class MediaType(enum.StrEnum):
@@ -99,24 +78,30 @@ class ButtonColor(enum.StrEnum):
     POSITIVE = enum.auto()
 
 
-@dataclasses.dataclass
-class ButtonAction:
-    """Base class for bot button action."""
+type ButtonPayloadField = int | str | bool | None | list['ButtonPayload']
+type ButtonPayload = dict[str, ButtonPayloadField] | None
 
 
 @dataclasses.dataclass
-class Button(abc.ABC):
-    """Base class for button in bot keyboard."""
-
-    action: ButtonAction
-    color: ButtonColor = ButtonColor.SECONDARY
-
-
-@dataclasses.dataclass
-class TextAction(ButtonAction):
+class TextButton:
     """Text button."""
 
     text: str
+    color: ButtonColor = ButtonColor.SECONDARY
+    payload: ButtonPayload = None
+
+
+@dataclasses.dataclass
+class OpenLinkButton:
+    """Button with URL to open."""
+
+    text: str
+    link: str
+    payload: ButtonPayload = None
+
+
+type Button = TextButton | OpenLinkButton
+"""Button in bot keyboard."""
 
 
 @dataclasses.dataclass
@@ -141,6 +126,7 @@ class InputMessage:
 
     user: User
     text: str
+    progress: UserProgress
 
 
 @dataclasses.dataclass
@@ -198,6 +184,12 @@ class ResponseType(enum.IntEnum):
     SEARCH_RESULT = enum.auto()
     """Show found profile to the user."""
 
+    AUTH_REQUIRED = enum.auto()
+    """Authorization required to continue with current operation."""
+
+    AUTH_NOT_COMPLETED = enum.auto()
+    """Authorization hasn't been completed by user."""
+
     ADDED_TO_FAVORITE = enum.auto()
     """Added last found profile to user's favorite list."""
 
@@ -213,6 +205,9 @@ class ResponseType(enum.IntEnum):
     FAVORITE_RESULT = enum.auto()
     """Show user's favorite list entry."""
 
+    KEYBOARD = enum.auto()
+    """Set keyboard for the bot message."""
+
     ATTACH_MEDIA = enum.auto()
     """Attach media objects to the bot message."""
 
@@ -225,13 +220,14 @@ class ResponseType(enum.IntEnum):
 
 type ResponseTypesGeneric = Literal[
     ResponseType.UNKNOWN_COMMAND,
-    ResponseType.MENU_HELP,
     ResponseType.SELECT_MENU,
     ResponseType.USER_SEX_MISSING,
     ResponseType.USER_CITY_MISSING,
     ResponseType.USER_BIRTHDAY_MISSING,
     ResponseType.SEARCH_FAILED,
     ResponseType.SEARCH_ERROR,
+    ResponseType.AUTH_REQUIRED,
+    ResponseType.AUTH_NOT_COMPLETED,
     ResponseType.ADDED_TO_FAVORITE,
     ResponseType.ADD_TO_FAVORITE_FAILED,
     ResponseType.FAVORITE_LIST_FAILED,
@@ -289,6 +285,40 @@ class ResponseWithUserIndex:
     """Allow response message to be squashed with others."""
 
 
+type ResponseTypesWithMenuOptions = Literal[
+    ResponseType.MENU_HELP,
+]
+"""All responses supporting `menu_options` field."""
+
+
+@dataclasses.dataclass
+class ResponseWithMenuOptions:
+    """State result with menu options as parameter."""
+
+    type: ResponseTypesWithMenuOptions
+    menu_options: Sequence[MenuToken]
+
+    allow_squash: bool = True
+    """Allow response message to be squashed with others."""
+
+
+type ResponseTypesWithKeyboard = Literal[
+    ResponseType.KEYBOARD,
+]
+"""All responses supporting `keyboard` field."""
+
+
+@dataclasses.dataclass
+class ResponseWithKeyboard:
+    """State result with keyboard as parameter."""
+
+    type: ResponseTypesWithKeyboard
+    keyboard: Keyboard
+
+    allow_squash: bool = True
+    """Allow response message to be squashed with others."""
+
+
 type ResponseTypesWithMedia = Literal[
     ResponseType.ATTACH_MEDIA,
 ]
@@ -310,6 +340,8 @@ type Response = (
     ResponseGeneric
     | ResponseWithUser
     | ResponseWithUserIndex
+    | ResponseWithMenuOptions
+    | ResponseWithKeyboard
     | ResponseWithMedia
 )
 """Bot response type to user."""
@@ -353,18 +385,24 @@ class ResponseFactory:
         )
 
     @staticmethod
-    def menu_help(*, allow_squash: bool = True) -> Response:
+    def menu_help(
+        menu_options: Sequence[MenuToken],
+        *,
+        allow_squash: bool = True,
+    ) -> Response:
         """Show menu help text to the user.
 
         Args:
+            menu_options (Sequence[MenuToken]): Menu options.
             allow_squash (bool, optional): Allow response message to be
                 squashed with others. Defaults to True.
 
         Returns:
             Response: Bot response to user.
         """
-        return ResponseGeneric(
+        return ResponseWithMenuOptions(
             type=ResponseType.MENU_HELP,
+            menu_options=menu_options,
             allow_squash=allow_squash,
         )
 
@@ -461,6 +499,38 @@ class ResponseFactory:
         """
         return ResponseGeneric(
             type=ResponseType.SEARCH_ERROR,
+            allow_squash=allow_squash,
+        )
+
+    @staticmethod
+    def auth_required(*, allow_squash: bool = True) -> Response:
+        """Authorization required to continue with current operation.
+
+        Args:
+            allow_squash (bool, optional): Allow response message to be
+                squashed with others. Defaults to True.
+
+        Returns:
+            Response: Bot response to user.
+        """
+        return ResponseGeneric(
+            type=ResponseType.AUTH_REQUIRED,
+            allow_squash=allow_squash,
+        )
+
+    @staticmethod
+    def auth_not_completed(*, allow_squash: bool = True) -> Response:
+        """Authorization hasn't been completed by user.
+
+        Args:
+            allow_squash (bool, optional): Allow response message to be
+                squashed with others. Defaults to True.
+
+        Returns:
+            Response: Bot response to user.
+        """
+        return ResponseGeneric(
+            type=ResponseType.AUTH_NOT_COMPLETED,
             allow_squash=allow_squash,
         )
 
@@ -575,6 +645,28 @@ class ResponseFactory:
             user=profile,
             index=index,
             total=total,
+            allow_squash=allow_squash,
+        )
+
+    @staticmethod
+    def keyboard(
+        keyboard: Keyboard,
+        *,
+        allow_squash: bool = True,
+    ) -> Response:
+        """Set keyboard for the bot message.
+
+        Args:
+            keyboard (list[Media]): Bot keyboard object.
+            allow_squash (bool, optional): Allow response message to be
+                squashed with others. Defaults to True.
+
+        Returns:
+            Response: Bot response to user.
+        """
+        return ResponseWithKeyboard(
+            type=ResponseType.KEYBOARD,
+            keyboard=keyboard,
             allow_squash=allow_squash,
         )
 

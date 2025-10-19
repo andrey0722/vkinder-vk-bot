@@ -2,16 +2,19 @@
 
 import abc
 from collections.abc import Iterator
-from typing import TYPE_CHECKING
+import copy
+from typing import TYPE_CHECKING, ClassVar
 
 from vkinder.log import get_logger
 from vkinder.model.db import DatabaseSession
-from vkinder.shared_types import MENU_OPTIONS
 from vkinder.shared_types import InputMessage
+from vkinder.shared_types import Keyboard
 from vkinder.shared_types import MenuToken
 from vkinder.shared_types import Response
 from vkinder.shared_types import ResponseFactory
+from vkinder.shared_types import User
 
+from .auth_provider import AuthProvider
 from .profile_provider import ProfileProvider
 from .profile_provider import ProfileProviderError
 
@@ -26,6 +29,12 @@ class State(abc.ABC):
     into the state and handles user replies.
     """
 
+    KEYBOARD: ClassVar[Keyboard]
+    """Bot keyboard for this user state."""
+
+    MENU_OPTIONS: ClassVar[tuple[MenuToken, ...]] = ()
+    """Menu commands accepted for this user state."""
+
     def __init__(self, manager: 'StateManager') -> None:
         """Initialize a controller state object.
 
@@ -37,13 +46,22 @@ class State(abc.ABC):
         self._logger = get_logger(self)
 
     @property
-    def provider(self) -> ProfileProvider:
+    def profile_provider(self) -> ProfileProvider:
         """Returns profile provider object for the state.
 
         Returns:
             ProfileProvider: Profile provider object.
         """
-        return self._manager.provider
+        return self._manager.profile_provider
+
+    @property
+    def auth_provider(self) -> AuthProvider:
+        """Returns authorization provider object for the state.
+
+        Returns:
+            AuthProvider: Authorization provider object.
+        """
+        return self._manager.auth_provider
 
     @abc.abstractmethod
     def start(
@@ -77,7 +95,8 @@ class State(abc.ABC):
             Iterator[Response]: Bot responses to the user.
         """
 
-    def is_command_accepted(self, message: InputMessage) -> bool:
+    @classmethod
+    def is_command_accepted(cls, message: InputMessage) -> bool:
         """Tests whether user input command is accepted in current state.
 
         Args:
@@ -87,8 +106,7 @@ class State(abc.ABC):
             bool: `True` if the command is accepted, otherwise `False`.
         """
         text = message.text
-        accepted_options = MENU_OPTIONS[message.user.state]
-        return isinstance(text, MenuToken) and text in accepted_options
+        return isinstance(text, MenuToken) and text in cls.MENU_OPTIONS
 
     def unknown_command(
         self,
@@ -112,20 +130,54 @@ class State(abc.ABC):
         yield ResponseFactory.unknown_command(allow_squash=False)
         yield from self.start(session, message)
 
-    def attach_profile_photos(self, profile_id: int) -> Iterator[Response]:
+    def show_keyboard(self, user: User) -> Response:
+        """Shows keyboard for this state to user.
+
+        Args:
+            user (User): User object.
+
+        Returns:
+            Iterator[Response]: Bot responses to the user.
+        """
+        keyboard = self.create_keyboard(user)
+        self._logger.debug('Sending keyboard: %r', keyboard)
+        return ResponseFactory.keyboard(keyboard)
+
+    def create_keyboard(self, user: User) -> Keyboard:
+        """Creates bot keyboard for this user state.
+
+        Args:
+            user (User): User object.
+
+        Returns:
+            Keyboard: Bit keyboard object.
+        """
+        # Duplicate keyboard to prevent messing it up
+        keyboard = copy.deepcopy(self.KEYBOARD)
+        self._logger.debug('Keyboard for user %d: %r', user.id, keyboard)
+        return keyboard
+
+    def attach_profile_photos(
+        self,
+        profile_id: int,
+        access_token: str | None = None,
+    ) -> Iterator[Response]:
         """Shows profile photos to user.
 
         Args:
             profile_id (int): User profile id.
+            access_token (str | None, optional): User access token for
+                API call. Defaults to None.
 
         Returns:
             Iterator[Response]: Bot responses to the user.
         """
         try:
-            photos = self.provider.get_user_photos(
+            photos = self.profile_provider.get_user_photos(
                 user_id=profile_id,
                 sort_by_likes=True,
                 limit=3,
+                access_token=access_token,
             )
         except ProfileProviderError:
             self._logger.warning('Failed to fetch profile photos')

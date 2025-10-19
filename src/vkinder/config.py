@@ -49,8 +49,21 @@ class VkConfig(ConfigBase):
     vk_community_token: str = 'vk1.a.VK_EXAMPLE_TOKEN'
     """VK community access token."""
 
-    vk_user_token: str = 'vk1.a.VK_EXAMPLE_TOKEN'
-    """VK user access token."""
+
+class AuthConfig(ConfigBase):
+    """External parameters for VK ID authorization process.
+
+    See .env.example file for variable description.
+    """
+
+    vk_app_id: int = 1234567890
+    """VK standalone application id."""
+
+    vk_auth_redirect_uri: str = 'https://example.com/callback'
+    """Redirection URL registerted in VK standalone application.
+
+    If contains non-ASCII characters it must be encoded using punycode.
+    """
 
 
 class DatabaseConfig(ConfigBase):

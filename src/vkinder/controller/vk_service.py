@@ -4,7 +4,7 @@ from collections.abc import Iterator
 import datetime
 import enum
 import random
-from typing import Any, Final, NotRequired, TypedDict, cast
+from typing import Any, Final, Literal, NoReturn, NotRequired, TypedDict, cast
 
 import vk_api
 import vk_api.keyboard
@@ -16,13 +16,15 @@ from vkinder.config import VkConfig
 from vkinder.exceptions import VkinderError
 from vkinder.log import get_logger
 from vkinder.model import ProfileProviderError
+from vkinder.model import ProfileProviderTokenError
 from vkinder.shared_types import ButtonColor
 from vkinder.shared_types import Keyboard
 from vkinder.shared_types import Media
+from vkinder.shared_types import OpenLinkButton
 from vkinder.shared_types import OutputMessage
 from vkinder.shared_types import Photo
 from vkinder.shared_types import Sex
-from vkinder.shared_types import TextAction
+from vkinder.shared_types import TextButton
 from vkinder.shared_types import User
 from vkinder.shared_types import UserSearchQuery
 
@@ -185,10 +187,21 @@ class VkUsersSearchParams(TypedDict):
     has_photo: NotRequired[bool]
     age_from: NotRequired[int]
     age_to: NotRequired[int]
+    access_token: NotRequired[str]
 
 
 class VkUsersSearchResult(VkHasItems[VkUser]):
     """VK response object for 'users.search' API method."""
+
+
+class VkPhotosGetParams(TypedDict):
+    """Parameters for 'photos.get' API method."""
+
+    owner_id: int
+    album_id: int | Literal['profile']
+    photo_ids: int | str
+    extended: NotRequired[Literal[1, 0]]
+    access_token: NotRequired[str]
 
 
 class VkPhotosGetResult(VkHasItems[VkPhoto]):
@@ -209,12 +222,22 @@ class VkMessagesSendParams(TypedDict):
     attachment: NotRequired[str]
 
 
+class VkTrackVisitorParams(TypedDict):
+    """Parameters for 'stats.trackVisitor' API method."""
+
+    access_token: NotRequired[str]
+
+
 class VkServiceError(ProfileProviderError, VkinderError):
     """Error when using VK service."""
 
 
 class VkApiError(VkServiceError):
     """Error when using VK API."""
+
+
+class VkTokenError(ProfileProviderTokenError, VkApiError):
+    """Error occurred because access token is invalid."""
 
 
 class VkUserNotFoundError(VkServiceError):
@@ -240,9 +263,16 @@ class VkService:
         """
         self._logger = get_logger(self)
         self._vk = self._create_vk(config.vk_community_token)
-        self._vk_user = self._create_vk(config.vk_user_token)
         self._longpoll = self._create_longpoll()
         self._logger.info('VK service is initialized')
+
+    def get_user_access_rights(self) -> str:
+        """Returns required access right set for user account.
+
+        Returns:
+            str: Access right set.
+        """
+        return 'photos'
 
     def listen(self) -> Iterator[Event]:
         """Retrieves events from VK longpoll server.
@@ -259,6 +289,14 @@ class VkService:
             Event: VK longpoll message event.
         """
         return self._log_events(filter(self._is_message_event, self._listen()))
+
+    def check_messages(self) -> Iterator[Event]:
+        """Retrieves message events from VK longpoll server.
+
+        Returns:
+            Iterator[Event]: VK longpoll message events if any.
+        """
+        return self._log_events(filter(self._is_message_event, self._check()))
 
     def send(self, message: OutputMessage) -> None:
         """Send a message from bot to user.
@@ -296,13 +334,38 @@ class VkService:
                 user_id,
                 e,
             )
-            raise VkApiError(e) from e
+            _reraise(e)
 
-    def get_search_result_size(self, query: UserSearchQuery) -> int:
+    def validate_access_token(self, access_token: str | None) -> bool:
+        """Tests if provided user access token is valid for API calls.
+
+        Args:
+            access_token (str | None): User access token.
+
+        Returns:
+            bool: `True` if valid, otherwise `False`.
+        """
+        params = VkTrackVisitorParams()
+        if access_token is not None:
+            params['access_token'] = access_token
+        try:
+            self._vk.method('stats.trackVisitor', params)
+        except vk_api.exceptions.ApiError as e:
+            self._logger.error('User access token error: %s', e)
+            return False
+        return True
+
+    def get_search_result_size(
+        self,
+        query: UserSearchQuery,
+        access_token: str | None = None,
+    ) -> int:
         """Requests number of user profiles in search result for query.
 
         Args:
             query (UserSearchQuery): Search query object.
+            access_token (str | None, optional): User access token for
+                API call. Defaults to None.
 
         Raises:
             VkApiError: Error when using VK API.
@@ -313,12 +376,14 @@ class VkService:
         self._logger.debug('Getting search result size for query %r', query)
         params = VkUsersSearchParams(count=0)
         _add_search_query(params, query)
+        if access_token is not None:
+            params['access_token'] = access_token
 
         try:
-            response = self._vk_user.method('users.search', params)
+            response = self._vk.method('users.search', params)
         except vk_api.exceptions.VkApiError as e:
             self._logger.error('Get search result size error: %s', e)
-            raise VkApiError(e) from e
+            _reraise(e)
 
         # Use type checker for VK API response
         response = cast(VkUsersSearchResult, response)
@@ -326,11 +391,17 @@ class VkService:
         self._logger.debug('Search result size %d for query %r', count, query)
         return count
 
-    def search_user(self, query: UserSearchQuery) -> User | None:
+    def search_user(
+        self,
+        query: UserSearchQuery,
+        access_token: str | None = None,
+    ) -> User | None:
         """Perform user search using specified search query.
 
         Args:
             query (UserSearchQuery): Search query object.
+            access_token (str | None, optional): User access token for
+                API call. Defaults to None.
 
         Returns:
             User | None: User profile found if any.
@@ -341,7 +412,7 @@ class VkService:
         self._logger.debug('Searching users with query %r', query)
 
         # To extract random user we must know number of users in search result
-        total = self.get_search_result_size(query)
+        total = self.get_search_result_size(query, access_token)
         if not total:
             self._logger.warning('No results for query %r', query)
             return None
@@ -356,12 +427,14 @@ class VkService:
             fields=_REQUEST_USER_FIELDS,
         )
         _add_search_query(params, query)
+        if access_token is not None:
+            params['access_token'] = access_token
 
         try:
-            response = self._vk_user.method('users.search', params)
+            response = self._vk.method('users.search', params)
         except vk_api.exceptions.VkApiError as e:
             self._logger.error('User search error: %s', e)
-            raise VkApiError(e) from e
+            _reraise(e)
 
         # Use type checker for VK API response
         response = cast(VkUsersSearchResult, response)
@@ -399,7 +472,7 @@ class VkService:
                 user_id,
                 e,
             )
-            raise VkApiError(e) from e
+            _reraise(e)
 
         # Use type checker for VK API response
         users = cast(VkUsersGetResult, response)
@@ -421,6 +494,7 @@ class VkService:
         *,
         sort_by_likes: bool = False,
         limit: int | None = None,
+        access_token: str | None = None,
     ) -> list[Photo]:
         """Extracts user profile photos with optional sorting.
 
@@ -430,6 +504,8 @@ class VkService:
                 descending order. Defaults to `False`.
             limit (int | None, optional): Limit result up to `limit`
                 photos if specified. Defaults to `None`.
+            access_token (str | None, optional): User access token for
+                API call. Defaults to None.
 
         Raises:
             VkApiError: Error when using VK API.
@@ -437,19 +513,22 @@ class VkService:
         Returns:
             list[Photo]: User profile protos.
         """
+        self._logger.debug('Extracting photos from user %d', user_id)
+
+        params = VkPhotosGetParams(
+            owner_id=user_id,
+            album_id='profile',
+            photo_ids=0,
+            extended=1,
+        )
+        if access_token is not None:
+            params['access_token'] = access_token
+
         try:
-            response = self._vk_user.method(
-                'photos.get',
-                {
-                    'owner_id': user_id,
-                    'album_id': 'profile',
-                    'extended': 1,
-                    'photo_ids': 0,
-                },
-            )
+            response = self._vk.method('photos.get', params)
         except vk_api.exceptions.VkApiError as e:
             self._logger.error('Get photo for user %d: %s', user_id, e)
-            raise VkApiError(e) from e
+            _reraise(e)
 
         # Use type checker for VK API response
         response = cast(VkPhotosGetExResult, response)
@@ -492,7 +571,7 @@ class VkService:
             return vk_api.VkApi(token=token)
         except vk_api.exceptions.VkApiError as e:
             self._logger.critical('Failed to connect to VK API: %s', e)
-            raise VkApiError(e) from e
+            _reraise(e)
 
     def _create_longpoll(self) -> VkLongPoll:
         """Internal helper to create VK longpoll object.
@@ -507,14 +586,31 @@ class VkService:
             return VkLongPoll(self._vk)
         except vk_api.exceptions.VkApiError as e:
             self._logger.critical('Failed to connect to VK longpoll: %s', e)
-            raise VkApiError(e) from e
+            _reraise(e)
 
     def _listen(self) -> Iterator[Event]:
+        """Yields events from longpoll server infinitely.
+
+        Yields:
+            Event: New events.
+        """
         try:
             yield from self._longpoll.listen()
         except vk_api.exceptions.VkApiError as e:
             self._logger.critical('VK listen error: %s', e)
-            raise VkApiError(e) from e
+            _reraise(e)
+
+    def _check(self) -> list[Event]:
+        """Checks for events in longpoll server and returns list of new ones.
+
+        Returns:
+            list[Event]: New events.
+        """
+        try:
+            return self._longpoll.check()
+        except vk_api.exceptions.VkApiError as e:
+            self._logger.critical('VK check error: %s', e)
+            _reraise(e)
 
     def _log_events(self, events: Iterator[Event]) -> Iterator[Event]:
         return map(self._log_event, events)
@@ -645,6 +741,21 @@ _VK_BUTTON_COLOR_MAPPING: Final = {
 }
 
 
+def _convert_color(color: ButtonColor) -> vk_api.keyboard.VkKeyboardColor:
+    """Internal helper to convert button color to VK API format.
+
+    Args:
+        color (ButtonColor): Button color.
+
+    Returns:
+        vk_api.keyboard.VkKeyboardColor: Button color in VK API format.
+    """
+    try:
+        return _VK_BUTTON_COLOR_MAPPING[color]
+    except KeyError as e:
+        raise NotImplementedError from e
+
+
 def _convert_keyboard(keyboard: Keyboard | None) -> str:
     """Internal helper to convert bot keyboard object to VK API JSON format.
 
@@ -667,13 +778,12 @@ def _convert_keyboard(keyboard: Keyboard | None) -> str:
     for row in keyboard.button_rows:
         vk_kb.add_line()
         for button in row:
-            try:
-                color = _VK_BUTTON_COLOR_MAPPING[button.color]
-            except KeyError as e:
-                raise NotImplementedError from e
-            action = button.action
-            if isinstance(action, TextAction):
-                vk_kb.add_button(action.text, color)
+            payload = button.payload
+            if isinstance(button, TextButton):
+                color = _convert_color(button.color)
+                vk_kb.add_button(button.text, color, payload)
+            elif isinstance(button, OpenLinkButton):
+                vk_kb.add_openlink_button(button.text, button.link, payload)
             else:
                 raise NotImplementedError
     return vk_kb.get_keyboard()
@@ -736,3 +846,49 @@ def _add_search_query(
         params['age_from'] = query.age_min
     if query.age_max is not None:
         params['age_to'] = query.age_max
+
+
+_TOKEN_ERROR_CODES: Final = {
+    5,  # User authorization failed
+    15,  # Access denied
+    102,  # Invalid token format
+    113,  # Invalid signature
+    200,  # Permissions denied
+    1114,  # Anonymous token expired
+    1116,  # Anonymous token is invalid
+}
+_AUTH_STATUS_CODES: Final = {400, 401}
+
+
+def is_token_error(e: vk_api.exceptions.VkApiError) -> bool:
+    """Checks whether VK API error is about invalid token or not.
+
+    Args:
+        e (vk_api.exceptions.VkApiError): VK API exception.
+
+    Returns:
+        bool: `True` if token error, otherwise `False`.
+    """
+    if isinstance(e, vk_api.exceptions.ApiError):
+        return e.code in _TOKEN_ERROR_CODES
+    if isinstance(e, vk_api.exceptions.ApiHttpError):
+        return e.response.status_code in _AUTH_STATUS_CODES
+    return False
+
+
+def _reraise(e: vk_api.exceptions.VkApiError) -> NoReturn:
+    """Reraise exception from VK API with type detection.
+
+    Args:
+        e (vk_api.exceptions.VkApiError): VK API exception.
+
+    Raises:
+        VkTokenError: Access token is invalid.
+        VkApiError: Generic VK API error.
+
+    Returns:
+        NoReturn: Never returns, always raises exception.
+    """
+    if is_token_error(e):
+        raise VkTokenError(e) from e
+    raise VkApiError(e) from e

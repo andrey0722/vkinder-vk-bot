@@ -27,7 +27,7 @@ def configure_root_logger():
     sqlalchemy.log.rootlogger.setLevel(logging.NOTSET)
 
 
-def configure_mapper_logger():
+def configure_orm_logger():
     """Override configuration of the `sqlalchemy` library mapper logger."""
-    logger = get_logger('sqlalchemy.orm.mapper.Mapper')
+    logger = get_logger('sqlalchemy.orm')
     logger.setLevel(logging.WARNING)

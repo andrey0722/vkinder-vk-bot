@@ -15,12 +15,12 @@ from vkinder.config import DatabaseConfig
 from vkinder.log import get_logger
 
 from .exceptions import DatabaseError
-from .exceptions import UserNotFoundError
 from .log import set_sqlalchemy_debug_filter
 from .types import Favorite
-from .types import FavoriteListProgress
 from .types import ModelBaseType
 from .types import User
+from .types import UserAuthData
+from .types import UserProgress
 from .types import UserState
 
 type OrmSessionFactory = Callable[[], orm.Session]
@@ -106,12 +106,12 @@ class DatabaseSession(contextlib.AbstractContextManager):
         Raises:
             DatabaseError: DB operational error.
         """
-        self._logger.debug('Extracting user %s', user_id)
+        self._logger.debug('Extracting user %d', user_id)
         try:
             user = self._session.get(User, user_id)
         except exc.SQLAlchemyError as e:
             me = _create_db_error(e)
-            self._logger.error('Get error: user=%r, error=%s', user_id, e)
+            self._logger.error('Geting user %d: %s', user_id, e)
             raise me from e
 
         if user is not None:
@@ -120,58 +120,7 @@ class DatabaseSession(contextlib.AbstractContextManager):
             self._logger.debug('User %s does not exist', user_id)
         return user
 
-    def add_user(self, user: User) -> None:
-        """Adds new user into the DB.
-
-        Input object could be modified in-place to respect current DB state.
-
-        Args:
-            user (User): User object.
-
-        Raises:
-            DatabaseError: DB operational error.
-        """
-        self._logger.debug('Adding user %r', user)
-        try:
-            self._session.add(user)
-        except exc.SQLAlchemyError as e:
-            me = _create_db_error(e)
-            self._logger.error('Add error: user=%r, error=%s', user, e)
-            raise me from e
-
-        self._logger.debug('Added user %r', user)
-
-    def update_user(self, user: User) -> User:
-        """Updates existing user info in the DB.
-
-        Args:
-            user (User): User object.
-
-        Returns:
-            User: User object now associated with this session.
-
-        Raises:
-            UserNotFoundError: The user is not found in the DB.
-            DatabaseError: DB operational error.
-        """
-        self._logger.debug('Updating user %r', user)
-        try:
-            session = self._session
-            if session.get(User, user.id) is None:
-                raise UserNotFoundError(user)
-            # Preserve user online field
-            online = user.online
-            result = session.merge(user)
-            result.online = online
-        except exc.SQLAlchemyError as e:
-            me = _create_db_error(e)
-            self._logger.error('Update error: user=%r, error=%s', user, e)
-            raise me from e
-
-        self._logger.debug('Updated user %r', result)
-        return result
-
-    def add_or_update_user(self, user: User) -> User:
+    def save_user(self, user: User) -> User:
         """Updates existing user info in the DB or adds if absent.
 
         Input object could be modified in-place to respect current DB state.
@@ -187,46 +136,104 @@ class DatabaseSession(contextlib.AbstractContextManager):
         """
         # See if we have this user in the model
         if existing_user := self.get_user(user.id):
-            # Apply user state from the model
-            user.state = existing_user.state
-            user.last_found_id = existing_user.last_found_id
-            # Update user info, it could change since last message
-            user = self.update_user(user)
+            try:
+                # Apply user state from the model
+                user.state = existing_user.state
+                # Preserve dynamic fields
+                online = user.online
+                # Update user info, it could change since last message
+                user = self._session.merge(user)
+                # Restore dynamic fields
+                user.online = online
+            except exc.SQLAlchemyError as e:
+                me = _create_db_error(e)
+                self._logger.error('Updating user %d: %s', user.id, e)
+                raise me from e
+            self._logger.debug('Updated user %r', user)
         else:
-            # User is now known
-            user.state = UserState.NEW_USER
-            self._logger.info('New user: %s', user)
-            self.add_user(user)
-        self.commit()
+            try:
+                # User is now known
+                user.state = UserState.NEW_USER
+                self._session.add(user)
+            except exc.SQLAlchemyError as e:
+                me = _create_db_error(e)
+                self._logger.error('Adding user %d: %s', user.id, e)
+                raise me from e
+            self._logger.info('New user: %d', user.id)
         return user
 
-    def delete_user(self, user_id: int) -> User | None:
-        """Deletes user from the DB.
+    def get_auth_data(
+        self,
+        user_id: int,
+    ) -> UserAuthData | None:
+        """For given user return theirs authorization data.
 
         Args:
             user_id (int): User id.
 
         Returns:
-            User | None: User object previously stored in the DB,
-                if any, otherwise `None`.
+            UserAuthData | None: Authorization data if any.
+
+        Raises:
+            ModelError: Model operational error.
+        """
+        self._logger.debug('Extracting auth data for %r', user_id)
+        try:
+            stmt = sa.select(UserAuthData).where(
+                UserAuthData.user_id == user_id,
+            )
+            auth_data = self._session.scalar(stmt)
+        except exc.SQLAlchemyError as e:
+            me = _create_db_error(e)
+            self._logger.error('Getting auth data for %r: %s', user_id, e)
+            raise me from e
+
+        if auth_data is not None:
+            self._logger.debug('Extracted auth data for %d', user_id)
+        else:
+            self._logger.debug('No auth data for %d', user_id)
+        return auth_data
+
+    def save_auth_data(self, auth_data: UserAuthData) -> UserAuthData:
+        """Updates an authorization data for user or adds if missing in DB.
+
+        Input object could be modified in-place to respect current DB state.
+
+        Args:
+            auth_data (AuthData): User authorization data.
+
+        Returns:
+            UserAuthData: Auth data object now associated with session.
 
         Raises:
             DatabaseError: DB operational error.
         """
-        self._logger.debug('Deleting user %r', user_id)
-        try:
-            stmt = sa.delete(User).where(User.id == user_id).returning(User)
-            user = self._session.scalar(stmt)
-        except exc.SQLAlchemyError as e:
-            me = _create_db_error(e)
-            self._logger.error('Delete error: user=%r, error=%s', user_id, e)
-            raise me from e
-
-        if user is not None:
-            self._logger.debug('User deleted %r', user)
+        # See if we have this user in the model
+        if self.get_auth_data(auth_data.user_id) is not None:
+            try:
+                auth_data = self._session.merge(auth_data)
+            except exc.SQLAlchemyError as e:
+                me = _create_db_error(e)
+                self._logger.error(
+                    'Updating auth data for %d: %s',
+                    auth_data.user_id,
+                    e,
+                )
+                raise me from e
+            self._logger.debug('Updated auth data for %d', auth_data.user_id)
         else:
-            self._logger.warning('No user %s, cannot delete', user_id)
-        return user
+            try:
+                self._session.add(auth_data)
+            except exc.SQLAlchemyError as e:
+                me = _create_db_error(e)
+                self._logger.error(
+                    'Adding auth data for %d: %s',
+                    auth_data.user_id,
+                    e,
+                )
+                raise me from e
+            self._logger.info('New auth data for %d', auth_data.user_id)
+        return auth_data
 
     def favorite_exists(self, user: User, profile_id: int) -> bool:
         """Checks whether the DB contains favorite record with profile id.
@@ -446,17 +453,14 @@ class DatabaseSession(contextlib.AbstractContextManager):
         self._logger.debug('Extracted %d favorites for %r', count, user)
         return favorites
 
-    def add_favorite_list_progress(
-        self,
-        progress: FavoriteListProgress,
-    ) -> FavoriteListProgress:
-        """Save a favorite list progress instance for user.
+    def save_user_progress(self, progress: UserProgress) -> UserProgress:
+        """Save a user progress instance for user.
 
         Args:
-            progress (FavoriteListProgress): Progress object.
+            progress (UserProgress): Progress object.
 
         Returns:
-            FavoriteListProgress: Progress object now associated with session.
+            UserProgress: Progress object now associated with session.
 
         Raises:
             DatabaseError: DB operational error.
@@ -467,7 +471,7 @@ class DatabaseSession(contextlib.AbstractContextManager):
         except exc.SQLAlchemyError as e:
             me = _create_db_error(e)
             self._logger.error(
-                'Add favorite list progress: progress=%r, error=%s',
+                'Add progress: progress=%r, error=%s',
                 progress,
                 e,
             )
@@ -476,73 +480,38 @@ class DatabaseSession(contextlib.AbstractContextManager):
         self._logger.debug('Saved: %r', progress)
         return progress
 
-    def get_favorite_list_progress(
-        self,
-        user: User,
-    ) -> FavoriteListProgress | None:
+    def get_user_progress(self, user: User) -> UserProgress:
         """For given user return theirs add favorite list progress.
 
         Args:
             user (User): User object.
 
         Returns:
-            FavoriteListProgress | None: Favorite list progress if any.
+            UserProgress: Favorite list progress if any.
 
         Raises:
             ModelError: Model operational error.
         """
-        self._logger.debug('Extracting favorite list progress for %r', user)
+        self._logger.debug('Extracting progress for %r', user)
         try:
-            stmt = sa.select(FavoriteListProgress).where(
-                FavoriteListProgress.user_id == user.id,
+            stmt = sa.select(UserProgress).where(
+                UserProgress.user_id == user.id,
             )
             progress = self._session.scalar(stmt)
         except exc.SQLAlchemyError as e:
             me = _create_db_error(e)
             self._logger.error(
-                'Get favorite list progress error: user=%r, error=%s',
+                'Get progress error: user=%r, error=%s',
                 user,
                 e,
             )
             raise me from e
+
+        # If doesn't exist, just create it
+        if progress is None:
+            progress = self.save_user_progress(UserProgress(user))
 
         self._logger.debug('Extracted: %r', progress)
-        return progress
-
-    def delete_favorite_list_progress(
-        self,
-        user: User,
-    ) -> FavoriteListProgress | None:
-        """For given user delete theirs add favorite list progress.
-
-        Args:
-            user (User): User object.
-
-        Returns:
-            FavoriteListProgress | None: Favorite list progress deleted
-                from the model if any.
-
-        Raises:
-            ModelError: Model operational error.
-        """
-        self._logger.debug('Deleting favorite list progress for %r', user)
-        try:
-            stmt = (
-                sa.delete(FavoriteListProgress)
-                .where(FavoriteListProgress.user_id == user.id)
-                .returning(FavoriteListProgress)
-            )
-            progress = self._session.scalar(stmt)
-        except exc.SQLAlchemyError as e:
-            me = _create_db_error(e)
-            self._logger.error(
-                'Delete favorite list progress error: user=%r, error=%s',
-                user,
-                e,
-            )
-            raise me from e
-
-        self._logger.debug('Deleted: %r', progress)
         return progress
 
 

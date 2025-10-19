@@ -3,10 +3,13 @@
 from .db import Database
 from .db import DatabaseSession
 from .exceptions import ModelError
-from .log import configure_mapper_logger
+from .log import configure_orm_logger
 from .log import configure_root_logger
+from .states import AuthProvider
+from .states import AuthRecord
 from .states import ProfileProvider
 from .states import ProfileProviderError
+from .states import ProfileProviderTokenError
 from .states import StateManager
 from .types import Favorite
 from .types import Sex
@@ -16,8 +19,11 @@ from .types import UserState
 __all__ = (
     'User',
     'UserState',
+    'AuthProvider',
+    'AuthRecord',
     'ProfileProvider',
     'ProfileProviderError',
+    'ProfileProviderTokenError',
     'StateManager',
     'Favorite',
     'Sex',
@@ -27,4 +33,4 @@ __all__ = (
 )
 
 configure_root_logger()
-configure_mapper_logger()
+configure_orm_logger()
