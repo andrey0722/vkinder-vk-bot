@@ -88,7 +88,7 @@ class Strings(enum.StrEnum):
     )
     NOT_SPECIFIED = 'Не указано'
     PHOTO_URLS_FAILED = '😔 Фото профиля недоступны'
-    HEADING_USER_PROFILE = 'Анекта пользователя: '
+    HEADING_USER_PROFILE = 'Анкета пользователя: '
     HEADING_YOUR_PROFILE = 'Твоя анкета: '
     AVAILABLE_COMMANDS = 'Доступные команды:'
 
