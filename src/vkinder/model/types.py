@@ -3,6 +3,7 @@
 import dataclasses
 import datetime
 import enum
+from typing import Any
 
 import sqlalchemy as sa
 from sqlalchemy import orm
@@ -146,11 +147,27 @@ class UserAuthData(ModelBaseType):
     refresh_token: Mapped[str] = orm.mapped_column(sa.String(400))
     """VK ID token to refresh access token."""
 
+    device_id: Mapped[str] = orm.mapped_column(sa.String(400))
+    """Identifier of authorization device, required for refreshing."""
+
     expire_time: Mapped[datetime.datetime] = orm.mapped_column(sa.DateTime)
     """Time when user access token becomes invalidated."""
 
     access_rights: Mapped[str] = orm.mapped_column(sa.String(400))
     """Access right set allocated to user access token."""
+
+    def asdict(self) -> dict[str, Any]:
+        """Transform object to a dict.
+
+        Returns:
+            dict[str, Any]: Resulting dict.
+        """
+        exclude = {'user'}
+        return {
+            field.name: getattr(self, field.name)
+            for field in dataclasses.fields(self)
+            if field.name not in exclude
+        }
 
 
 class UserProgress(ModelBaseType):

@@ -16,6 +16,7 @@ import requests
 
 from vkinder.config import AuthConfig
 from vkinder.log import get_logger
+from vkinder.model import AuthProviderRefreshError
 from vkinder.model import AuthRecord
 
 AUTH_ROUTE = '/auth'
@@ -60,7 +61,6 @@ class Oauth2DataParamsBase(TypedDict):
 
     client_id: int
     device_id: str
-    redirect_uri: str
     state: NotRequired[str]
 
 
@@ -70,6 +70,7 @@ class Oauth2AuthDataParams(Oauth2DataParamsBase):
     grant_type: Literal['authorization_code']
     code: str
     code_verifier: str
+    redirect_uri: str
 
 
 class Oauth2AuthResponse(TypedDict):
@@ -90,6 +91,7 @@ class Oauth2RefreshDataParams(Oauth2DataParamsBase):
 
     grant_type: Literal['refresh_token']
     refresh_token: str
+    scope: NotRequired[str]
 
 
 @dataclasses.dataclass
@@ -158,6 +160,45 @@ class AuthService:
         port = self._config.auth_server_port
         self._logger.info('Starting auth server on port %d...', port)
         self._app.run(host='0.0.0.0', port=port)
+
+    def refresh_auth(self, record: AuthRecord) -> AuthRecord:
+        """Get new user access token using refresh token.
+
+        Args:
+            record (AuthRecord): Auth record object.
+
+        Raises:
+            AuthProviderRefreshError: Failed to refresh token.
+
+        Returns:
+            AuthRecord: New auth record object.
+        """
+        user_id = record.user_id
+        self._logger.debug('Refreshing auth for user %d', user_id)
+
+        config = self._config
+        device_id = record.device_id
+
+        # Exchange refresh token for new access token
+        data = Oauth2RefreshDataParams(
+            grant_type='refresh_token',
+            refresh_token=record.refresh_token,
+            client_id=config.vk_app_id,
+            device_id=device_id,
+            scope=record.access_rights,
+        )
+
+        response = requests.post('https://id.vk.ru/oauth2/auth', data=data)
+        try:
+            response.raise_for_status()
+        except requests.HTTPError as e:
+            self._logger.error('Token refresh error: %s', e)
+            raise AuthProviderRefreshError(e) from e
+        self._logger.info('Refreshed token for user %d', user_id)
+
+        # OK, got the access token
+        auth = cast(Oauth2AuthResponse, response.json())
+        return self._convert_auth_record(auth, device_id)
 
     def create_auth_link(
         self,
@@ -274,43 +315,68 @@ class AuthService:
 
         session_data = self._session_data[session]
         config = self._config
+        device_id = args['device_id']
 
         # Exchange code for VK ID access token
         data = Oauth2AuthDataParams(
             grant_type='authorization_code',
             code=args['code'],
             client_id=config.vk_app_id,
-            device_id=args['device_id'],
+            device_id=device_id,
             redirect_uri=config.vk_auth_redirect_uri,
             code_verifier=session_data.code_verifier,
         )
+
         response = requests.post('https://id.vk.ru/oauth2/auth', data=data)
-        if response.status_code == 200:
-            # OK, got the access token
-            auth = cast(Oauth2AuthResponse, response.json())
+        try:
+            response.raise_for_status()
+        except requests.HTTPError as e:
+            self._logger.error('Token get error: %s', e)
 
-            # User session is done
-            self._clear_user_session(user_id)
-
-            expires_in = auth['expires_in']
-            now = datetime.datetime.now(datetime.UTC).astimezone()
-            expire_time = now + datetime.timedelta(seconds=expires_in)
-            record = AuthRecord(
-                user_id=user_id,
-                access_token=auth['access_token'],
-                refresh_token=auth['refresh_token'],
-                expire_time=expire_time,
-                access_rights=auth['scope'],
+            # Show error message
+            return self._respond_auth_error(
+                response.status_code,
+                response.text,
             )
+        self._logger.info('Got token for user %d', user_id)
 
-            # Notify about successful authorization
-            self._queue.put(record)
+        # OK, got the access token
+        auth = cast(Oauth2AuthResponse, response.json())
 
-            # Close the page automatically
-            return self._respond_auth_success_and_close()
+        # User session is done
+        self._clear_user_session(user_id)
 
-        # Show error message
-        return self._respond_auth_error(response.status_code, response.text)
+        # Notify about successful authorization
+        self._queue.put(self._convert_auth_record(auth, device_id))
+
+        # Close the page automatically
+        return self._respond_auth_success_and_close()
+
+    @staticmethod
+    def _convert_auth_record(
+        auth: Oauth2AuthResponse,
+        device_id: str,
+    ) -> AuthRecord:
+        """Constructs aht record from VK ID response.
+
+        Args:
+            auth (Oauth2AuthResponse): VK ID auth response.
+            device_id (str): Device id value.
+
+        Returns:
+            AuthRecord: Auth record.
+        """
+        expires_in = auth['expires_in']
+        now = datetime.datetime.now(datetime.UTC).astimezone()
+        expire_time = now + datetime.timedelta(seconds=expires_in)
+        return AuthRecord(
+            user_id=auth['user_id'],
+            access_token=auth['access_token'],
+            refresh_token=auth['refresh_token'],
+            device_id=device_id,
+            expire_time=expire_time,
+            access_rights=auth['scope'],
+        )
 
     def _log_route_call(self):
         """Internal helper to log server route call."""

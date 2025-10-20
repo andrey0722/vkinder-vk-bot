@@ -394,7 +394,6 @@ class VkService:
         try:
             photo_io = io.BytesIO(http_response.content)
             response = self._upload.photo_messages(photo_io)
-            self._logger.warning('test3')
         except vk_api.exceptions.VkApiError as e:
             self._logger.error('Photo upload error: %s', e)
             _reraise(e)

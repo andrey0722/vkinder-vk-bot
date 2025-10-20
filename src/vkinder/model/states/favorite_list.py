@@ -201,10 +201,8 @@ class FavoriteListState(State):
             progress.last_fav_id = profile_id
 
         # Check user authorization
-        with session.begin():
-            auth_data = session.get_auth_data(user.id)
-            token = auth_data and auth_data.access_token
-        if not self.profile_provider.validate_access_token(token):
+        token = self.get_user_token(session, user.id)
+        if token is None:
             # Request authorization from user
             yield from self._manager.start_auth(session, message)
             return

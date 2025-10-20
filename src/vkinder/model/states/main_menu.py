@@ -76,10 +76,7 @@ class MainMenuState(State):
                 yield from self._manager.start_search(session, message)
 
             case MenuToken.PROFILE:
-                # Check user authorization
-                with session.begin():
-                    auth_data = session.get_auth_data(user.id)
-                    token = auth_data and auth_data.access_token
+                token = self.get_user_token(session, user.id)
                 yield ResponseFactory.your_profile(user)
                 yield from self.attach_profile_photos(user.id, token)
                 yield from self.start(session, message)

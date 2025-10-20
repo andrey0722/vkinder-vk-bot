@@ -58,20 +58,14 @@ class AuthState(State):
             yield from self.unknown_command(session, message)
             return
 
-        # Check user authorization
-        with session.begin():
-            auth_data = session.get_auth_data(user.id)
-            token = auth_data and auth_data.access_token
-
-        # Make sure the token is valid
-        if not self.profile_provider.validate_access_token(token):
-            token = None
+        # Check authorization status
+        token = self.get_user_token(session, user.id)
 
         # Match user selection in main menu
         match text:
             case MenuToken.AUTH_FINISHED:
                 if token is None:
-                    # Auth data not found
+                    # Not authorized yet
                     yield ResponseFactory.auth_not_completed()
                     yield from self.start(session, message)
                 else:

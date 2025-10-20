@@ -13,8 +13,11 @@ from vkinder.shared_types import MenuToken
 from vkinder.shared_types import Response
 from vkinder.shared_types import ResponseFactory
 from vkinder.shared_types import User
+from vkinder.shared_types import UserAuthData
 
 from .auth_provider import AuthProvider
+from .auth_provider import AuthProviderRefreshError
+from .auth_provider import AuthRecord
 from .profile_provider import ProfileProvider
 from .profile_provider import ProfileProviderError
 
@@ -184,3 +187,42 @@ class State(abc.ABC):
             yield ResponseFactory.photo_failed()
         else:
             yield ResponseFactory.attach_media(photos)
+
+    def get_user_token(
+        self,
+        session: DatabaseSession,
+        user_id: int,
+    ) -> str | None:
+        """Extracts user access token and refreshes it if needed.
+
+        Args:
+            session (DatabaseSession): Session object.
+            user_id (int): User profile id.
+
+        Returns:
+            str | None: User access token if valid, otherwise `None`.
+        """
+        # Check user authorization
+        with session.begin():
+            auth_data = session.get_auth_data(user_id)
+            if auth_data is None:
+                # No auth data at all
+                return None
+            token = auth_data.access_token
+
+        # Make sure the token is valid
+        if self.profile_provider.validate_access_token(token):
+            return token
+
+        # Try to refresh token
+        record = AuthRecord(**auth_data.asdict())
+        try:
+            record = self.auth_provider.refresh_auth(record)
+        except AuthProviderRefreshError:
+            return None
+
+        # Save new auth data
+        auth_data = UserAuthData(**record.asdict())
+        with session.begin():
+            auth_data = session.save_auth_data(auth_data)
+            return auth_data.access_token

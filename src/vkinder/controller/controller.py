@@ -96,13 +96,7 @@ class Controller:
         """
         self._logger.info('Auth record for user %d', record.user_id)
         with self._db.create_session() as session, session.begin():
-            auth_data = UserAuthData(
-                user_id=record.user_id,
-                access_token=record.access_token,
-                refresh_token=record.refresh_token,
-                expire_time=record.expire_time,
-                access_rights=record.access_rights,
-            )
+            auth_data = UserAuthData(**record.asdict())
             session.save_auth_data(auth_data)
 
     def handle_message(self, event: Event) -> None:
