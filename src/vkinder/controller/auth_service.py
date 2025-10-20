@@ -155,8 +155,9 @@ class AuthService:
 
     def run_auth_server(self) -> None:
         """Start the authorization server and run it indefinitely."""
-        self._logger.info('Starting auth server...')
-        self._app.run(host='0.0.0.0', port=5000)
+        port = self._config.auth_server_port
+        self._logger.info('Starting auth server on port %d...', port)
+        self._app.run(host='0.0.0.0', port=port)
 
     def create_auth_link(
         self,

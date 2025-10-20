@@ -65,6 +65,9 @@ class AuthConfig(ConfigBase):
     If contains non-ASCII characters it must be encoded using punycode.
     """
 
+    auth_server_port: int = 80
+    """Port number for the authorization server to listen."""
+
 
 class DatabaseConfig(ConfigBase):
     """External parameters for DB connection loaded from the environment.
