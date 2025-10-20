@@ -738,7 +738,11 @@ class VkService:
             Event: New events.
         """
         try:
-            yield from self._longpoll.listen()
+            while True:
+                try:
+                    yield from self._longpoll.listen()
+                except requests.RequestException as e:
+                    self._logger.error('VK listen network error: %s', e)
         except vk_api.exceptions.VkApiError as e:
             self._logger.critical('VK listen error: %s', e)
             _reraise(e)
@@ -751,6 +755,9 @@ class VkService:
         """
         try:
             return self._longpoll.check()
+        except requests.RequestException as e:
+            self._logger.error('VK check network error: %s', e)
+            return []
         except vk_api.exceptions.VkApiError as e:
             self._logger.critical('VK check error: %s', e)
             _reraise(e)
