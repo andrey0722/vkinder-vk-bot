@@ -491,28 +491,45 @@ class VkService:
 
         # VK API limits search query results to 1000 no matter what
         effective_total = min(total, 1000)
-        random_offset = random.randint(0, effective_total)
 
-        params = VkUsersSearchParams(
-            count=1,
-            offset=random_offset,
-            fields=_REQUEST_USER_FIELDS_STR,
-        )
-        _add_search_query(params, query)
-        if access_token is not None:
-            params['access_token'] = access_token
+        for attempt in range(20):
+            # There are users in search results. But VK API sometimes
+            # fails to return results when calling API with big
+            # offset <= 1000. So retry for some time until found.
+            random_offset = random.randint(0, effective_total)
+            self._logger.debug(
+                'Search attempt %d with offset %d',
+                attempt,
+                random_offset,
+            )
 
-        try:
-            response = self._vk.method('users.search', params)
-        except vk_api.exceptions.VkApiError as e:
-            self._logger.error('User search error: %s', e)
-            _reraise(e)
+            params = VkUsersSearchParams(
+                count=1,
+                offset=random_offset,
+                fields=_REQUEST_USER_FIELDS_STR,
+            )
+            _add_search_query(params, query)
+            if access_token is not None:
+                params['access_token'] = access_token
 
-        # Use type checker for VK API response
-        response = cast(VkUsersSearchResult, response)
+            try:
+                response = self._vk.method('users.search', params)
+            except vk_api.exceptions.VkApiError as e:
+                self._logger.error('User search error: %s', e)
+                _reraise(e)
 
-        if users := response.get('items', []):
-            return _convert_user(users[0])
+            # Use type checker for VK API response
+            response = cast(VkUsersSearchResult, response)
+
+            if users := response.get('items'):
+                user = _convert_user(users[0])
+                self._logger.debug(
+                    'Found user on %d attempt: %r',
+                    attempt,
+                    user,
+                )
+                return user
+
         self._logger.warning('No users found for query %r', query)
         return None
 
