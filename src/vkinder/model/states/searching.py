@@ -24,6 +24,27 @@ from .state import State
 SEARCH_AGE_MAX_GAP = 1
 """Maximum age gap to use in profile search."""
 
+SEARCH_SEX_MAP: Final[dict[Sex, Sex]] = {
+    Sex.FEMALE: Sex.MALE,
+    Sex.MALE: Sex.FEMALE,
+}
+"""Mapping for sex selection in search query."""
+
+FILTER_BY_SEX: bool = True
+"""Filer users by sex value. If `False` then no filtering."""
+
+FILTER_BY_CITY: bool = True
+"""Filer users by sex value. If `False` then no filtering."""
+
+FILTER_BY_AGE: bool = True
+"""Filer users by age value. If `False` then no filtering."""
+
+FILTER_ONLINE: bool | None = True
+"""Filer users by online property value. If `None` then no filtering."""
+
+FILTER_HAS_PHOTO: bool | None = True
+"""Filer users by photo availability. If `None` then no filtering."""
+
 
 class SearchingState(State):
     """Shows search results to user and handles user commands."""
@@ -138,12 +159,6 @@ class SearchingState(State):
             case MenuToken.HELP:
                 yield ResponseFactory.menu_help(self.MENU_OPTIONS)
 
-    _SEARCH_SEX_MAP: Final[dict[Sex, Sex]] = {
-        Sex.FEMALE: Sex.MALE,
-        Sex.MALE: Sex.FEMALE,
-    }
-    """Mapping for sex selection in search query."""
-
     def _get_search_query(self, user: User) -> UserSearchQuery | Response:
         """Internal helper to calculate query parameters for given user.
 
@@ -153,30 +168,41 @@ class SearchingState(State):
         Returns:
             UserSearchQuery | Response: User search query object or error.
         """
-        try:
-            sex = self._SEARCH_SEX_MAP[user.sex]
-        except KeyError:
-            self._logger.error('User sex is missing')
-            return ResponseFactory.user_sex_missing()
+        if FILTER_BY_SEX:
+            try:
+                sex = SEARCH_SEX_MAP[user.sex]
+            except KeyError:
+                self._logger.error('User sex is missing')
+                return ResponseFactory.user_sex_missing()
+        else:
+            sex = None
 
-        city_id = user.city_id
-        if city_id is None:
-            self._logger.error('User city is missing')
-            return ResponseFactory.user_city_missing()
+        if FILTER_BY_CITY:
+            city_id = user.city_id
+            if city_id is None:
+                self._logger.error('User city is missing')
+                return ResponseFactory.user_city_missing()
+        else:
+            city_id = None
 
-        age = user.age
-        if age is None:
-            self._logger.error('User birthday is missing')
-            return ResponseFactory.user_birthday_missing()
-        self._logger.debug('User age is %d', age)
+        if FILTER_BY_AGE:
+            age = user.age
+            if age is None:
+                self._logger.error('User birthday is missing')
+                return ResponseFactory.user_birthday_missing()
+            self._logger.debug('User age is %d', age)
+            age_min = max(age - SEARCH_AGE_MAX_GAP, 0)
+            age_max = age + SEARCH_AGE_MAX_GAP
+        else:
+            age_min = age_max = None
 
         return UserSearchQuery(
             sex=sex,
             city_id=city_id,
-            online=True,
-            has_photo=True,
-            age_min=max(age - SEARCH_AGE_MAX_GAP, 0),
-            age_max=age + SEARCH_AGE_MAX_GAP,
+            online=FILTER_ONLINE,
+            has_photo=FILTER_HAS_PHOTO,
+            age_min=age_min,
+            age_max=age_max,
         )
 
     def _add_favorite(
