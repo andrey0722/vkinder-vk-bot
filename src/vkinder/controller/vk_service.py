@@ -3,9 +3,11 @@
 from collections.abc import Iterator
 import datetime
 import enum
+import io
 import random
-from typing import Any, Final, Literal, NoReturn, NotRequired, TypedDict, cast
+from typing import Final, Literal, NoReturn, NotRequired, TypedDict, cast
 
+import requests
 import vk_api
 import vk_api.keyboard
 from vk_api.longpoll import Event
@@ -27,8 +29,6 @@ from vkinder.shared_types import Sex
 from vkinder.shared_types import TextButton
 from vkinder.shared_types import User
 from vkinder.shared_types import UserSearchQuery
-
-type VkObject = dict[str, Any]
 
 
 class VkHasCount(TypedDict):
@@ -80,6 +80,7 @@ class VkUser(TypedDict):
     nickname: NotRequired[str]
     online: NotRequired[int]
     sex: NotRequired[VkSex]
+    photo_max: NotRequired[str]
 
 
 class VkPhotoType(enum.StrEnum):
@@ -194,6 +195,10 @@ class VkUsersSearchResult(VkHasItems[VkUser]):
     """VK response object for 'users.search' API method."""
 
 
+type VkPhotosSaveMessagesPhotoResult = list[VkPhoto]
+"""VK response object for 'photos.saveMessagesPhoto' API method."""
+
+
 class VkPhotosGetParams(TypedDict):
     """Parameters for 'photos.get' API method."""
 
@@ -215,9 +220,10 @@ class VkPhotosGetExResult(VkHasItems[VkPhotoEx]):
 class VkMessagesSendParams(TypedDict):
     """Parameters for 'messages.send' API method."""
 
-    user_id: int
+    user_id: NotRequired[int]
     message: str
     random_id: int
+    peer_id: NotRequired[int]
     keyboard: NotRequired[str]
     attachment: NotRequired[str]
 
@@ -226,6 +232,19 @@ class VkTrackVisitorParams(TypedDict):
     """Parameters for 'stats.trackVisitor' API method."""
 
     access_token: NotRequired[str]
+
+
+class VkApiErrorCode(enum.IntEnum):
+    """General error codes that may come from VK API."""
+
+    USER_AUTH_FAILED = 5
+    ACCESS_DENIED = 15
+    PROFILE_IS_PRIVATE = 30
+    INVALID_TOKEN_FORMAT = 102
+    INVALID_SIGNATURE = 113
+    PERMISSIONS_DENIED = 200
+    ANONYMOUS_TOKEN_EXPIRED = 1114
+    ANONYMOUS_TOKEN_INVALID = 1116
 
 
 class VkServiceError(ProfileProviderError, VkinderError):
@@ -238,6 +257,18 @@ class VkApiError(VkServiceError):
 
 class VkTokenError(ProfileProviderTokenError, VkApiError):
     """Error occurred because access token is invalid."""
+
+
+class VkDownloadError(VkServiceError):
+    """Error when downloading file when using VK API."""
+
+
+class VkUploadError(VkServiceError):
+    """Error when uploading file when using VK API."""
+
+
+class VkUserProfilePrivateError(VkServiceError):
+    """This user profile is private."""
 
 
 class VkUserNotFoundError(VkServiceError):
@@ -263,7 +294,9 @@ class VkService:
         """
         self._logger = get_logger(self)
         self._vk = self._create_vk(config.vk_community_token)
+        self._upload = vk_api.VkUpload(self._vk)
         self._longpoll = self._create_longpoll()
+        self._http = requests.Session()
         self._logger.info('VK service is initialized')
 
     def get_user_access_rights(self) -> str:
@@ -335,6 +368,45 @@ class VkService:
                 e,
             )
             _reraise(e)
+
+    def upload_photo_url(self, url: str) -> VkPhoto:
+        """Uploads photos bu URL so that it could be sent as attachment.
+
+        Args:
+            url (str): Photo URL.
+
+        Raises:
+            VkDownloadError: Failed to download photo from URL.
+            VkUploadError: Failed to upload photo to VK API.
+
+        Returns:
+            VkPhoto: Photo object in VK API raw format.
+        """
+        self._logger.debug('Uploading photo URL: %s', url)
+        try:
+            http_response = self._http.get(url)
+            http_response.raise_for_status()
+        except requests.HTTPError as e:
+            raise VkDownloadError(e) from e
+
+        self._logger.debug('Photo downloaded, uploading: %s', url)
+
+        try:
+            photo_io = io.BytesIO(http_response.content)
+            response = self._upload.photo_messages(photo_io)
+            self._logger.warning('test3')
+        except vk_api.exceptions.VkApiError as e:
+            self._logger.error('Photo upload error: %s', e)
+            _reraise(e)
+
+        # Use type checker for VK API response
+        response = cast(VkPhotosSaveMessagesPhotoResult, response)
+        try:
+            photo = response[0]
+        except IndexError as e:
+            raise VkUploadError from e
+        self._logger.debug('Photo uploaded: %r', photo)
+        return photo
 
     def validate_access_token(self, access_token: str | None) -> bool:
         """Tests if provided user access token is valid for API calls.
@@ -424,7 +496,7 @@ class VkService:
         params = VkUsersSearchParams(
             count=1,
             offset=random_offset,
-            fields=_REQUEST_USER_FIELDS,
+            fields=_REQUEST_USER_FIELDS_STR,
         )
         _add_search_query(params, query)
         if access_token is not None:
@@ -457,11 +529,29 @@ class VkService:
         Returns:
             User: User object.
         """
+        user = self.get_user_profile_raw(user_id)
+        user = _convert_user(user)
+        self._logger.debug('Extracted user: %r', user)
+        return user
+
+    def get_user_profile_raw(self, user_id: int) -> VkUser:
+        """Extract user profile by their profile id in raw VK API format.
+
+        Args:
+            user_id (int): User profile id.
+
+        Raises:
+            VkApiError: Error when using VK API.
+            VkUserNotFoundError: No user profile for this user id.
+
+        Returns:
+            VkUser: User raw object.
+        """
         self._logger.debug('Extracting user profile for id=%d', user_id)
 
         params = VkUsersGetParams(
             user_ids=user_id,
-            fields=_REQUEST_USER_FIELDS,
+            fields=_REQUEST_USER_FIELDS_STR,
         )
 
         try:
@@ -484,8 +574,6 @@ class VkService:
             raise VkUserNotFoundError(user_id) from e
 
         self._logger.info('Extracted user profile %d', user_id)
-        user = _convert_user(users[0])
-        self._logger.debug('Extracted user: %r', user)
         return user
 
     def get_user_photos(
@@ -525,18 +613,28 @@ class VkService:
             params['access_token'] = access_token
 
         try:
-            response = self._vk.method('photos.get', params)
-        except vk_api.exceptions.VkApiError as e:
-            self._logger.error('Get photo for user %d: %s', user_id, e)
-            _reraise(e)
-
-        # Use type checker for VK API response
-        response = cast(VkPhotosGetExResult, response)
-
-        result: list[Photo] = []
-        photos = response['items']
+            photos = self.get_user_photos_raw(
+                user_id=user_id,
+                access_token=access_token,
+            )
+        except VkServiceError:
+            # Try to get just user profile avatar
+            user = self.get_user_profile_raw(user_id)
+            url = user.get('photo_max')
+            if not url:
+                raise
+            photo = self.upload_photo_url(url)
+            return [
+                Photo(
+                    id=photo['id'],
+                    owner_id=photo['owner_id'],
+                    likes=0,
+                    url=url,
+                ),
+            ]
 
         # Extract all photos from response
+        result: list[Photo] = []
         for photo in photos:
             orig_photo = _get_photo_source(photo)
             result.append(
@@ -554,6 +652,51 @@ class VkService:
         if limit is not None:
             result = result[:limit]
         return result
+
+    def get_user_photos_raw(
+        self,
+        user_id: int,
+        *,
+        access_token: str | None = None,
+    ) -> list[VkPhotoEx]:
+        """Extracts user profile photos in raw VK API format.
+
+        Args:
+            user_id (int): User profile id.
+            access_token (str | None, optional): User access token for
+                API call. Defaults to None.
+
+        Raises:
+            VkApiError: Error when using VK API.
+
+        Returns:
+            list[VkPhotoEx]: User profile photos in raw VK API format.
+        """
+        self._logger.debug('Extracting photos from user %d', user_id)
+
+        params = VkPhotosGetParams(
+            owner_id=user_id,
+            album_id='profile',
+            photo_ids=0,
+            extended=1,
+        )
+        if access_token is not None:
+            params['access_token'] = access_token
+
+        try:
+            response = self._vk.method('photos.get', params)
+        except vk_api.exceptions.VkApiError as e:
+            self._logger.error('Get photo for user %d: %s', user_id, e)
+            _reraise(e)
+
+        # Use type checker for VK API response
+        response = cast(VkPhotosGetExResult, response)
+        self._logger.debug(
+            'Extracted %d photos from user %d',
+            response['count'],
+            user_id,
+        )
+        return response['items']
 
     def _create_vk(self, token: str) -> vk_api.VkApi:
         """Internal helper to create VK API object.
@@ -647,8 +790,18 @@ def _get_random_id() -> int:
 
 
 _REQUEST_USER_FIELDS = (
-    'nickname, first_name, last_name, city, sex, bdate, domain, online'
+    'nickname',
+    'first_name',
+    'last_name',
+    'city',
+    'sex',
+    'bdate',
+    'domain',
+    'online',
+    'photo_max',
 )
+
+_REQUEST_USER_FIELDS_STR = ', '.join(_REQUEST_USER_FIELDS)
 
 
 _VK_SEX_TO_SEX: dict[VkSex, Sex] = {
@@ -849,13 +1002,13 @@ def _add_search_query(
 
 
 _TOKEN_ERROR_CODES: Final = {
-    5,  # User authorization failed
-    15,  # Access denied
-    102,  # Invalid token format
-    113,  # Invalid signature
-    200,  # Permissions denied
-    1114,  # Anonymous token expired
-    1116,  # Anonymous token is invalid
+    VkApiErrorCode.USER_AUTH_FAILED,
+    VkApiErrorCode.ACCESS_DENIED,
+    VkApiErrorCode.INVALID_TOKEN_FORMAT,
+    VkApiErrorCode.INVALID_SIGNATURE,
+    VkApiErrorCode.PERMISSIONS_DENIED,
+    VkApiErrorCode.ANONYMOUS_TOKEN_EXPIRED,
+    VkApiErrorCode.ANONYMOUS_TOKEN_INVALID,
 }
 _AUTH_STATUS_CODES: Final = {400, 401}
 
@@ -876,6 +1029,20 @@ def is_token_error(e: vk_api.exceptions.VkApiError) -> bool:
     return False
 
 
+def is_private_profile_error(e: vk_api.exceptions.VkApiError) -> bool:
+    """Checks whether VK API error is about private profile or not.
+
+    Args:
+        e (vk_api.exceptions.VkApiError): VK API exception.
+
+    Returns:
+        bool: `True` if private profile error, otherwise `False`.
+    """
+    if isinstance(e, vk_api.exceptions.ApiError):
+        return e.code == VkApiErrorCode.PROFILE_IS_PRIVATE
+    return False
+
+
 def _reraise(e: vk_api.exceptions.VkApiError) -> NoReturn:
     """Reraise exception from VK API with type detection.
 
@@ -891,4 +1058,6 @@ def _reraise(e: vk_api.exceptions.VkApiError) -> NoReturn:
     """
     if is_token_error(e):
         raise VkTokenError(e) from e
+    if is_private_profile_error(e):
+        raise VkUserProfilePrivateError(e) from e
     raise VkApiError(e) from e
