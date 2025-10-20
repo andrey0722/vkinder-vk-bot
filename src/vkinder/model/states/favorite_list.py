@@ -64,7 +64,7 @@ class FavoriteListState(State):
                 index = 0
 
         self._logger.info('Starting for user %d', user.id)
-        yield self.show_keyboard(user)
+        yield self.show_keyboard(message)
         yield from self._show(session, message, index)
 
     @override
@@ -84,7 +84,7 @@ class FavoriteListState(State):
             user.id,
             text,
         )
-        yield self.show_keyboard(user)
+        yield self.show_keyboard(message)
 
         if not self.is_command_accepted(message):
             yield from self.unknown_command(session, message)

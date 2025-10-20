@@ -41,7 +41,7 @@ class AuthorizeParams(TypedDict):
     scope: NotRequired[str]
     code_challenge: NotRequired[str]
     code_challenge_method: NotRequired[Literal['S256']]
-    display: NotRequired[Literal['page']]
+    display: NotRequired[Literal['page', 'popup', 'touch', 'mobile']]
     vk_platform: NotRequired[Literal['standalone', 'web']]
 
 
@@ -101,22 +101,30 @@ class SessionData:
     access_rights: str
     code_verifier: str
     code_challenge: str
+    chat_id: int | None
 
 
 class AuthService:
     """Provides means to proceed with user authorization."""
 
-    def __init__(self, config: AuthConfig, queue: Queue[AuthRecord]) -> None:
+    def __init__(
+        self,
+        config: AuthConfig,
+        queue: Queue[AuthRecord],
+        group_id: int | None = None,
+    ) -> None:
         """Initialize authorization service object.
 
         Args:
             config (AuthConfig): Config object.
             queue (Queue[AuthRecord]): Queue to put new authorization
                 data from users.
+            group_id (int | None, optional): Bot group id. Defaults to None.
         """
         self._logger = get_logger(self)
         self._config = config
         self._queue = queue
+        self._group_id = group_id
 
         self._app = Flask(__name__)
 
@@ -204,12 +212,15 @@ class AuthService:
         self,
         user_id: int,
         access_rights: str,
+        chat_id: int | None = None,
     ) -> str:
         """Constructs link for user to proceed with authorization.
 
         Args:
             user_id (int): User id.
             access_rights (str): User access right set to request from user.
+            chat_id (int | None, optional): Chat id of message to the bot.
+                Defaults to None.
 
         Returns:
             str: Authorization link.
@@ -228,6 +239,7 @@ class AuthService:
             access_rights=access_rights,
             code_verifier=code_verifier,
             code_challenge=code_challenge,
+            chat_id=chat_id,
         )
 
         params = AuthRouteParams(state=session)
@@ -350,7 +362,10 @@ class AuthService:
         self._queue.put(self._convert_auth_record(auth, device_id))
 
         # Close the page automatically
-        return self._respond_auth_success_and_close()
+        return self._respond_auth_success_and_close(
+            group_id=self._group_id,
+            chat_id=session_data.chat_id,
+        )
 
     @staticmethod
     def _convert_auth_record(
@@ -413,17 +428,37 @@ class AuthService:
         return html, code
 
     @staticmethod
-    def _respond_auth_success_and_close() -> RouteResponse:
+    def _respond_auth_success_and_close(
+        group_id: int | None,
+        chat_id: int | None,
+    ) -> RouteResponse:
         """Redirect user to the given URL.
+
+        Args:
+            group_id (int | None): Bot group id.
+            chat_id (int | None): Chat id of message to the bot.
 
         Returns:
             RouteResponse: Server HTTP response.
         """
-        html = """
+        target = f'c{chat_id}' if chat_id else group_id and f'-{group_id}'
+        select_chat = f'?sel={target}' if target else ''
+        html = f"""
             <!DOCTYPE html>
             <html>
             <head><title>Authorized successfully</title></head>
-            <body><script>window.close();</script></body>
+            <body>
+            <p><font size="30">You may close this window.</font></p>
+            <script>
+                if (window.opener) {{
+                    // Close window or WebView
+                    window.close();
+                }} else {{
+                    // Redirect user back to chat
+                    window.location.href = 'vk://vk.com/im{select_chat}';
+                }}
+            </script>
+            </body>
             </html>
         """
         code = 200

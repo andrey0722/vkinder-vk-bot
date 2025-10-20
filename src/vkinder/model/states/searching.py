@@ -81,7 +81,7 @@ class SearchingState(State):
         with session.begin():
             user = message.user
         self._logger.info('Starting for user %d', user.id)
-        yield self.show_keyboard(user)
+        yield self.show_keyboard(message)
 
         # Check user authorization
         token = self.get_user_token(session, user.id)
@@ -136,7 +136,7 @@ class SearchingState(State):
             user = message.user
         text = message.text
         self._logger.info('User %d selected in search menu: %r', user.id, text)
-        yield self.show_keyboard(user)
+        yield self.show_keyboard(message)
 
         if not self.is_command_accepted(message):
             yield from self.unknown_command(session, message)

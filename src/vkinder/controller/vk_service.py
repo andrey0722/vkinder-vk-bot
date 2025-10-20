@@ -83,6 +83,14 @@ class VkUser(TypedDict):
     photo_max: NotRequired[str]
 
 
+class VkGroup(TypedDict):
+    """VK group descriptor."""
+
+    id: int
+    name: str
+    screen_name: str
+
+
 class VkPhotoType(enum.StrEnum):
     """VK photo type designator."""
 
@@ -163,6 +171,18 @@ class VkPhotoEx(VkPhoto):
     tags: VkHasCount
     can_comment: int
     reposts: VkHasCount
+
+
+class VkGroupsGetByIdParams(TypedDict):
+    """Parameters for 'groups.getById' API method."""
+
+    group_ids: NotRequired[int | str]
+    group_id: NotRequired[str]
+    fields: NotRequired[str]
+
+
+type VkGroupsGetByIdResult = list[VkGroup]
+"""VK response object for 'groups.getById' API method."""
 
 
 class VkUsersGetParams(TypedDict):
@@ -322,6 +342,31 @@ class VkService:
             Event: VK longpoll message event.
         """
         return self._log_events(filter(self._is_message_event, self._listen()))
+
+    def get_group_id(self) -> int:
+        """Retrieves current group id from VK API.
+
+        Raises:
+            VkApiError: Error when using VK API.
+
+        Returns:
+            int: Current group id.
+        """
+        self._logger.debug('Getting group id')
+        params = VkGroupsGetByIdParams()
+
+        try:
+            response = self._vk.method('groups.getById', params)
+        except vk_api.VkApiError as e:
+            self._logger.error('Get group id error: %s', e)
+            _reraise(e)
+
+        # Use type checker for VK API response
+        response = cast(VkGroupsGetByIdResult, response)
+        group = response[0]
+        group_id = group['id']
+        self._logger.debug('Group id %d, name="%s"', group_id, group['name'])
+        return group_id
 
     def check_messages(self) -> Iterator[Event]:
         """Retrieves message events from VK longpoll server.

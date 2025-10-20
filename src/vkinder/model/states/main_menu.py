@@ -51,7 +51,7 @@ class MainMenuState(State):
         with session.begin():
             user = message.user
         self._logger.info('Starting for user %d', user.id)
-        yield self.show_keyboard(user)
+        yield self.show_keyboard(message)
         yield ResponseFactory.select_menu()
 
     @override
@@ -64,7 +64,7 @@ class MainMenuState(State):
             user = message.user
         text = message.text
         self._logger.info('User %d selected in main menu: %r', user.id, text)
-        yield self.show_keyboard(user)
+        yield self.show_keyboard(message)
 
         if not self.is_command_accepted(message):
             yield from self.unknown_command(session, message)

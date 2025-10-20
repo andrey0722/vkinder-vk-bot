@@ -52,7 +52,8 @@ class Controller:
         self._db = db
         self._vk = VkService(vk_config)
         self._auth_queue = Queue[AuthRecord]()
-        self._auth = AuthService(auth_config, self._auth_queue)
+        group_id = self._vk.get_group_id()
+        self._auth = AuthService(auth_config, self._auth_queue, group_id)
         self._state_manager = StateManager(self._vk, self._auth)
 
         self._COMMAND_MAP: Final[dict[Command, MessageHandler]] = {
@@ -151,9 +152,10 @@ class Controller:
             InputMessage: Message object.
         """
         user_id = cast(int, event.user_id)
+        chat_id = cast(int, event.chat_id) if event.from_chat else None
         user = self._vk.get_user_profile(user_id)
         with session.begin():
             user = session.save_user(user)
             progress = session.get_user_progress(user)
         text = normalize_menu_command(event.text)
-        return InputMessage(user, text, progress)
+        return InputMessage(user, text, progress, chat_id)

@@ -127,6 +127,7 @@ class InputMessage:
     user: User
     text: str
     progress: UserProgress
+    chat_id: int | None
 
 
 @dataclasses.dataclass

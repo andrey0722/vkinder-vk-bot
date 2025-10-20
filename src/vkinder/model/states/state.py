@@ -12,7 +12,6 @@ from vkinder.shared_types import Keyboard
 from vkinder.shared_types import MenuToken
 from vkinder.shared_types import Response
 from vkinder.shared_types import ResponseFactory
-from vkinder.shared_types import User
 from vkinder.shared_types import UserAuthData
 
 from .auth_provider import AuthProvider
@@ -133,31 +132,32 @@ class State(abc.ABC):
         yield ResponseFactory.unknown_command(allow_squash=False)
         yield from self.start(session, message)
 
-    def show_keyboard(self, user: User) -> Response:
+    def show_keyboard(self, message: InputMessage) -> Response:
         """Shows keyboard for this state to user.
 
         Args:
-            user (User): User object.
+            message (InputMessage): A message from user.
 
         Returns:
             Iterator[Response]: Bot responses to the user.
         """
-        keyboard = self.create_keyboard(user)
+        keyboard = self.create_keyboard(message)
         self._logger.debug('Sending keyboard: %r', keyboard)
         return ResponseFactory.keyboard(keyboard)
 
-    def create_keyboard(self, user: User) -> Keyboard:
+    def create_keyboard(self, message: InputMessage) -> Keyboard:
         """Creates bot keyboard for this user state.
 
         Args:
-            user (User): User object.
+            message (InputMessage): A message from user.
 
         Returns:
             Keyboard: Bit keyboard object.
         """
+        user_id = message.user.id
         # Duplicate keyboard to prevent messing it up
         keyboard = copy.deepcopy(self.KEYBOARD)
-        self._logger.debug('Keyboard for user %d: %r', user.id, keyboard)
+        self._logger.debug('Keyboard for user %d: %r', user_id, keyboard)
         return keyboard
 
     def attach_profile_photos(

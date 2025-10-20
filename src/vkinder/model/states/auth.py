@@ -12,7 +12,6 @@ from vkinder.shared_types import OpenLinkButton
 from vkinder.shared_types import Response
 from vkinder.shared_types import ResponseFactory
 from vkinder.shared_types import TextButton
-from vkinder.shared_types import User
 
 from .state import State
 
@@ -37,7 +36,7 @@ class AuthState(State):
         with session.begin():
             user = message.user
         self._logger.info('Starting for user %d', user.id)
-        yield self.show_keyboard(user)
+        yield self.show_keyboard(message)
         yield ResponseFactory.auth_required()
         yield ResponseFactory.select_menu()
 
@@ -52,7 +51,7 @@ class AuthState(State):
             target = message.progress.last_state
         text = message.text
         self._logger.info('User %d selected in main menu: %r', user.id, text)
-        yield self.show_keyboard(user)
+        yield self.show_keyboard(message)
 
         if not self.is_command_accepted(message):
             yield from self.unknown_command(session, message)
@@ -80,11 +79,12 @@ class AuthState(State):
                 yield from self.start(session, message)
 
     @override
-    def create_keyboard(self, user: User) -> Keyboard:
+    def create_keyboard(self, message: InputMessage) -> Keyboard:
         access_rights = self.profile_provider.get_user_access_rights()
         auth_link = self.auth_provider.create_auth_link(
-            user_id=user.id,
+            user_id=message.user.id,
             access_rights=access_rights,
+            chat_id=message.chat_id,
         )
         self._logger.info('Got auth link: %s', auth_link)
         return self._create_keyboard(auth_link)

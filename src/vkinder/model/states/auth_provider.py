@@ -43,12 +43,15 @@ class AuthProvider(Protocol):
         self,
         user_id: int,
         access_rights: str,
+        chat_id: int | None = None,
     ) -> str:
         """Constructs link for user to proceed with authorization.
 
         Args:
             user_id (int): User id.
             access_rights (str): User access right set to request from user.
+            chat_id (int | None, optional): Chat id of message to the bot.
+                Defaults to None.
 
         Returns:
             str: Authorization link.

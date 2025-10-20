@@ -1,3 +1,4 @@
+"""This module contains some functions for formatting."""
 
 from collections.abc import Sequence
 
