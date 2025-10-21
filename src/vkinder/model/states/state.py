@@ -219,6 +219,9 @@ class State(abc.ABC):
         try:
             record = self.auth_provider.refresh_auth(record)
         except AuthProviderRefreshError:
+            with session.begin():
+                # User auth data is useless
+                session.delete_auth_data(user_id)
             return None
 
         # Save new auth data

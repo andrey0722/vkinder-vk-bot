@@ -70,6 +70,7 @@ class Controller:
         """Process all incoming messages and keep running until stopped."""
         # Allow users to perform authorization
         self._auth.start_auth_server()
+        self._logger.info('Started message loop')
         while True:
             # Check new messages
             for message in self._vk.check_messages():

@@ -102,7 +102,10 @@ class SearchingState(State):
             profile = self.profile_provider.search_user(query, token)
         except ProfileProviderTokenError:
             # Problem with the token
-            yield from self._manager.start_auth(session, message)
+            if self.get_user_token(session, user.id) is None:
+                yield from self._manager.start_auth(session, message)
+            else:
+                yield ResponseFactory.search_error()
             return
         except ProfileProviderError:
             yield ResponseFactory.search_error()

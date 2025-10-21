@@ -238,6 +238,28 @@ class DatabaseSession:
             self._logger.info('New auth data for %d', auth_data.user_id)
         return auth_data
 
+    def delete_auth_data(self, user_id: int) -> None:
+        """For given user delete theirs authorization data.
+
+        Args:
+            user_id (int): User id.
+
+        Raises:
+            DatabaseError: DB operational error.
+        """
+        self._logger.debug('Deleting auth data for %d', user_id)
+        try:
+            stmt = sa.delete(UserAuthData).where(
+                UserAuthData.user_id == user_id
+            )
+            self._session.execute(stmt)
+        except exc.SQLAlchemyError as e:
+            me = _create_db_error(e)
+            self._logger.error('Deleting auth data for %d: %s', user_id, e)
+            raise me from e
+
+        self._logger.debug('Deleted auth data for %d', user_id)
+
     def favorite_exists(self, user: User, profile_id: int) -> bool:
         """Checks whether the DB contains favorite record with profile id.
 

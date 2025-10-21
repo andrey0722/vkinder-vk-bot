@@ -74,8 +74,8 @@ class Oauth2AuthDataParams(Oauth2DataParamsBase):
     redirect_uri: str
 
 
-class Oauth2AuthResponse(TypedDict):
-    """Authorization response from https://id.vk.ru/oauth2/auth."""
+class Oauth2AuthSuccess(TypedDict):
+    """Authorization success response from https://id.vk.ru/oauth2/auth."""
 
     refresh_token: str
     access_token: str
@@ -85,6 +85,17 @@ class Oauth2AuthResponse(TypedDict):
     state: str
     user_id: int
     scope: str
+
+
+class Oauth2AuthError(TypedDict):
+    """Authorization error response from https://id.vk.ru/oauth2/auth."""
+
+    error: str
+    error_description: str
+
+
+type Oauth2AuthResponse = Oauth2AuthSuccess | Oauth2AuthError
+"""Authorization response from https://id.vk.ru/oauth2/auth."""
 
 
 class Oauth2RefreshDataParams(Oauth2DataParamsBase):
@@ -221,10 +232,16 @@ class AuthService:
         except requests.HTTPError as e:
             self._logger.error('Token refresh error: %s', e)
             raise AuthProviderRefreshError(e) from e
-        self._logger.info('Refreshed token for user %d', user_id)
+
+        # Use type checker for VK ID response
+        auth = cast(Oauth2AuthResponse, response.json())
+        if 'error' in auth:
+            message = f'{auth['error']}: {auth['error_description']}'
+            self._logger.error('Token refresh error: %s', message)
+            raise AuthProviderRefreshError(message)
 
         # OK, got the access token
-        auth = cast(Oauth2AuthResponse, response.json())
+        self._logger.info('Refreshed token for user %d', user_id)
         return self._convert_auth_record(auth, device_id)
 
     def create_auth_link(
@@ -369,10 +386,18 @@ class AuthService:
                 response.status_code,
                 response.text,
             )
-        self._logger.info('Got token for user %d', user_id)
+
+        # Use type checker for VK ID response
+        auth = cast(Oauth2AuthResponse, response.json())
+        if 'error' in auth:
+            message = f'{auth['error']}: {auth['error_description']}'
+            return self._respond_auth_error(
+                response.status_code,
+                message,
+            )
 
         # OK, got the access token
-        auth = cast(Oauth2AuthResponse, response.json())
+        self._logger.info('Got token for user %d', user_id)
 
         # User session is done
         self._clear_user_session(user_id)
@@ -388,13 +413,13 @@ class AuthService:
 
     @staticmethod
     def _convert_auth_record(
-        auth: Oauth2AuthResponse,
+        auth: Oauth2AuthSuccess,
         device_id: str,
     ) -> AuthRecord:
         """Constructs aht record from VK ID response.
 
         Args:
-            auth (Oauth2AuthResponse): VK ID auth response.
+            auth (Oauth2AuthSuccess): VK ID auth response.
             device_id (str): Device id value.
 
         Returns:
