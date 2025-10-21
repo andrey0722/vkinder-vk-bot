@@ -319,6 +319,12 @@ class VkService:
         self._http = requests.Session()
         self._logger.info('VK service is initialized')
 
+    def close(self) -> None:
+        """Close all VK API connections."""
+        self._vk.http.close()
+        self._upload.http.close()
+        self._longpoll.session.close()
+
     def get_user_access_rights(self) -> str:
         """Returns required access right set for user account.
 

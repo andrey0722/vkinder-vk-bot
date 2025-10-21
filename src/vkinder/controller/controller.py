@@ -61,6 +61,11 @@ class Controller:
         }
         self._DEFAULT_HANDLER: Final = self._state_manager.respond
 
+    def close(self) -> None:
+        """Close all services."""
+        self._vk.close()
+        self._auth.close()
+
     def start_message_loop(self) -> None:
         """Process all incoming messages and keep running until stopped."""
         # Allow users to perform authorization

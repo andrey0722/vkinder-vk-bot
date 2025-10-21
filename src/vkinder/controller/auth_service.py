@@ -13,6 +13,7 @@ from flask import Flask
 from flask import request
 import pkce
 import requests
+from werkzeug.serving import make_server
 
 from vkinder.config import AuthConfig
 from vkinder.log import get_logger
@@ -126,7 +127,7 @@ class AuthService:
         self._queue = queue
         self._group_id = group_id
 
-        self._app = Flask(__name__)
+        self._app = Flask(f'{__name__}.{type(self).__qualname__}')
 
         # Use redirect URI network location for redirects
         parsed = urlparse(self._config.vk_auth_redirect_uri)
@@ -155,19 +156,37 @@ class AuthService:
         self._session_user: dict[str, int] = {}
 
         self._thread: threading.Thread | None = None
+        port = self._config.auth_server_port
+        self._server = make_server('0.0.0.0', port, self._app)
         self._logger.info('Auth service is initialized')
+
+    def close(self) -> None:
+        """Stop authorization server."""
+        port = self._server.port
+        self._logger.info('Stopping auth server on port %d...', port)
+        # Stop the server gracefully
+        self._server.shutdown()
+        self._logger.info('Stopped auth server on port %d', port)
+        if self._thread and self._thread.is_alive():
+            # Try to stop the thread gracefully
+            self._thread.join(5)
+            if self._thread.is_alive():
+                self._logger.warning('Failed to stop auth server thread')
 
     def start_auth_server(self) -> None:
         """Start the authorization server in a thread and return."""
-        self._thread = threading.Thread(target=self.run_auth_server)
+        self._thread = threading.Thread(
+            target=self.run_auth_server,
+            daemon=True,
+        )
         self._thread.start()
         self._logger.info('Started auth server')
 
     def run_auth_server(self) -> None:
         """Start the authorization server and run it indefinitely."""
-        port = self._config.auth_server_port
+        port = self._server.port
         self._logger.info('Starting auth server on port %d...', port)
-        self._app.run(host='0.0.0.0', port=port)
+        self._server.serve_forever()
 
     def refresh_auth(self, record: AuthRecord) -> AuthRecord:
         """Get new user access token using refresh token.

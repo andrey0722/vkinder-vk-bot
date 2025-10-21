@@ -2,9 +2,8 @@
 
 from collections.abc import Callable
 from collections.abc import Iterator
-import contextlib
 from types import TracebackType
-from typing import Self, override
+from typing import Self
 
 import sqlalchemy as sa
 from sqlalchemy import exc
@@ -26,7 +25,7 @@ from .types import UserState
 type OrmSessionFactory = Callable[[], orm.Session]
 
 
-class DatabaseSession(contextlib.AbstractContextManager):
+class DatabaseSession:
     """Controls database ORM session operation."""
 
     def __init__(self, factory: OrmSessionFactory) -> None:
@@ -39,17 +38,21 @@ class DatabaseSession(contextlib.AbstractContextManager):
         self._logger = get_logger(self)
         self._session = factory()
 
-    @override
     def __enter__(self) -> Self:
+        """Enter the context block."""
         return self
 
-    @override
     def __exit__(
         self,
         exc_type: type[BaseException] | None,
         exc_value: BaseException | None,
         traceback: TracebackType | None,
-    ) -> bool | None:
+    ) -> None:
+        """Close the session on context block exit."""
+        self.close()
+
+    def close(self) -> None:
+        """Close the underlying session."""
         self._session.close()
 
     def begin(self) -> orm.SessionTransaction:
@@ -535,6 +538,10 @@ class Database:
         if config.clear_data:
             self._drop_tables()
         self._create_tables()
+
+    def close(self) -> None:
+        """Close all DB connections."""
+        self._engine.dispose()
 
     def create_session(self) -> DatabaseSession:
         """Create session to interact with objects in the database.

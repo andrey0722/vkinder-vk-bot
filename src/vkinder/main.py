@@ -15,8 +15,8 @@ def main():
     logger = get_logger(main)
     logger.info('Application started')
     try:
-        app = Application()
-        app.run()
+        with Application() as app:
+            app.run()
     except KeyboardInterrupt:
         logger.info('Stopped by keyboard interrupt')
     except VkinderError as e:

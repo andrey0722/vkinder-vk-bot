@@ -4,6 +4,9 @@ This module defines the main class of the entire application and
 all connections between program components.
 """
 
+from types import TracebackType
+from typing import Self
+
 from vkinder.config import AuthConfig
 from vkinder.config import DatabaseConfig
 from vkinder.config import VkConfig
@@ -24,6 +27,24 @@ class Application:
             vk_config=self._read_vk_config(),
             auth_config=self._read_auth_config(),
         )
+
+    def __enter__(self) -> Self:
+        """Enter the context block."""
+        return self
+
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_value: BaseException | None,
+        traceback: TracebackType | None,
+    ) -> None:
+        """Stop all components on context exit."""
+        self.close()
+
+    def close(self) -> None:
+        """Stop all components."""
+        self._controller.close()
+        self._db.close()
 
     def run(self) -> None:
         """Start the bot and keep running until stopped."""
