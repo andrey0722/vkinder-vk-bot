@@ -60,7 +60,8 @@ def render_messages(
         # Keep just the last keyboard
         keyboard = message.keyboard or keyboard
         # Collect all text paragraphs
-        paragraphs.append(message.text)
+        if message.text:
+            paragraphs.append(message.text)
         # Collect media from all messages
         media.extend(message.media)
 

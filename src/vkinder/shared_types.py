@@ -145,6 +145,14 @@ class OutputMessage:
     media: list[Media] = dataclasses.field(default_factory=list)
 
 
+@enum.unique
+class UserSortOrder(enum.StrEnum):
+    """Defines which user profiles are returned first."""
+
+    RELEVANT = enum.auto()
+    NEWEST = enum.auto()
+
+
 @dataclasses.dataclass
 class UserSearchQuery:
     """User search parameters."""
@@ -155,6 +163,7 @@ class UserSearchQuery:
     has_photo: bool | None = None
     age_min: int | None = None
     age_max: int | None = None
+    sort: UserSortOrder | None = None
 
 
 class ResponseType(enum.IntEnum):

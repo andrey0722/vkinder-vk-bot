@@ -123,7 +123,7 @@ class AuthService:
         self,
         config: AuthConfig,
         queue: Queue[AuthRecord],
-        group_id: int | None = None,
+        group_id: int,
     ) -> None:
         """Initialize authorization service object.
 
@@ -131,7 +131,7 @@ class AuthService:
             config (AuthConfig): Config object.
             queue (Queue[AuthRecord]): Queue to put new authorization
                 data from users.
-            group_id (int | None, optional): Bot group id. Defaults to None.
+            group_id (int): Bot group id.
         """
         self._logger = get_logger(self)
         self._config = config
@@ -168,6 +168,7 @@ class AuthService:
 
         self._thread: threading.Thread | None = None
         port = self._config.auth_server_port
+        self._logger.info('Creating server on port %d...', port)
         self._server = make_server('0.0.0.0', port, self._app)
         self._logger.info('Auth service is initialized')
 

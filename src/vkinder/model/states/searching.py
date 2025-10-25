@@ -1,6 +1,7 @@
 """This module shows search results to user and handles user commands."""
 
 from collections.abc import Iterator
+import copy
 import random
 from typing import ClassVar, Final, override
 
@@ -18,6 +19,7 @@ from vkinder.shared_types import Sex
 from vkinder.shared_types import TextButton
 from vkinder.shared_types import User
 from vkinder.shared_types import UserSearchQuery
+from vkinder.shared_types import UserSortOrder
 
 from .profile_provider import ProfileProviderError
 from .profile_provider import ProfileProviderTokenError
@@ -219,7 +221,17 @@ class SearchingState(State):
             Iterator[Response]: Bot responses to the user.
         """
         user_id = message.user.id
-        profiles = list(self.profile_provider.search_users(query, token))
+        profiles = self._get_search_results(user_id, token, query)
+
+        # Ensure only unique profiles are present
+        old_count = len(profiles)
+        profiles = list(set(profiles))
+        self._logger.info(
+            'Extracted unique %d (from total %d) profiles for user %d',
+            len(profiles),
+            old_count,
+            user_id,
+        )
 
         # Apply blacklist
         with session.begin():
@@ -227,7 +239,7 @@ class SearchingState(State):
             profiles = session.filter_non_blacklisted(user_id, profiles)
 
         self._logger.info(
-            'Found %d (%d) profiles for user %d',
+            'Filtered %d (from %d) profiles for user %d',
             len(profiles),
             old_count,
             user_id,
@@ -256,6 +268,39 @@ class SearchingState(State):
             self._logger.warning('No profiles found for user %d', user_id)
             yield ResponseFactory.search_failed()
             yield from self._manager.start_main_menu(session, message)
+
+    def _get_search_results(
+        self,
+        user_id: int,
+        token: str,
+        query: UserSearchQuery,
+    ) -> list[int]:
+        """Performs an actual search query and returns search results.
+
+        Args:
+            user_id (int): Bot user id.
+            token (str): User access token.
+            query (UserSearchQuery): User search query object.
+
+        Returns:
+            list[int]: Profile ids found.
+        """
+        # Perform several search attempts with different sorting
+        # and merge results to overcome search limit.
+        query = copy.deepcopy(query)
+        profiles: list[int] = []
+
+        # Find most relevant people
+        query.sort = UserSortOrder.RELEVANT
+        profiles.extend(self.profile_provider.search_users(query, token))
+        self._logger.debug('%d profiles for user %d', len(profiles), user_id)
+
+        # Find newest accounts that satisfy search query
+        query.sort = UserSortOrder.NEWEST
+        profiles.extend(self.profile_provider.search_users(query, token))
+        self._logger.debug('%d profiles for user %d', len(profiles), user_id)
+
+        return profiles
 
     def _add_favorite(
         self,

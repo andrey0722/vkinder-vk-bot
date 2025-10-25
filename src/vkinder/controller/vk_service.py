@@ -29,6 +29,7 @@ from vkinder.shared_types import Sex
 from vkinder.shared_types import TextButton
 from vkinder.shared_types import User
 from vkinder.shared_types import UserSearchQuery
+from vkinder.shared_types import UserSortOrder
 
 VK_SEARCH_MAX_SIZE = 1000
 """VK API limits search query results to 1000 no matter what."""
@@ -202,12 +203,24 @@ type VkUsersGetResult = list[VkUser]
 """VK response object for 'users.get' API method."""
 
 
+@enum.unique
+class VkUsersSearchSort(enum.IntEnum):
+    """Defines which user profiles are returned first."""
+
+    RELEVANT = 0
+    """Most relevant users first."""
+
+    NEWEST = 1
+    """Most new accounts first."""
+
+
 class VkUsersSearchParams(TypedDict):
     """Parameters for 'users.search' API method."""
 
     count: NotRequired[int]
     offset: NotRequired[int]
     fields: NotRequired[str]
+    sort: NotRequired[VkUsersSearchSort]
     sex: NotRequired[VkSex]
     city: NotRequired[int]
     online: NotRequired[bool]
@@ -1015,6 +1028,12 @@ def _get_photo_source(photo: VkPhoto) -> VkPhotoSource:
     return max(photo['sizes'], key=lambda x: x['width'] * x['height'])
 
 
+_VK_SEARCH_SORT_MAPPING: Final = {
+    UserSortOrder.RELEVANT: VkUsersSearchSort.RELEVANT,
+    UserSortOrder.NEWEST: VkUsersSearchSort.NEWEST,
+}
+
+
 def _add_search_query(
     params: VkUsersSearchParams,
     query: UserSearchQuery,
@@ -1037,6 +1056,8 @@ def _add_search_query(
         params['age_from'] = query.age_min
     if query.age_max is not None:
         params['age_to'] = query.age_max
+    if query.sort is not None:
+        params['sort'] = _VK_SEARCH_SORT_MAPPING[query.sort]
 
 
 _TOKEN_ERROR_CODES: Final = {
