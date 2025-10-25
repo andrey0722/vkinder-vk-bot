@@ -203,6 +203,24 @@ class SearchingState(State):
             age_max=age_max,
         )
 
+    _TEST_WITH_PHOTO = [
+        752496947,
+        302526771,
+        545498940,
+        5786733,
+        244591270,
+    ]
+    _TEST_RESTRICTED_PHOTO = [
+        112792352,
+        13335006,
+        243006811,
+        641166997,
+    ]
+
+    # _TEST_LIST = _TEST_WITH_PHOTO
+    # _TEST_LIST = _TEST_RESTRICTED_PHOTO
+    _TEST_LIST = _TEST_WITH_PHOTO + _TEST_RESTRICTED_PHOTO
+
     def _search(
         self,
         session: DatabaseSession,
@@ -220,7 +238,13 @@ class SearchingState(State):
             Iterator[Response]: Bot responses to the user.
         """
         user_id = message.user.id
-        profiles = self._get_search_results(user_id, query)
+        # profiles = self._get_search_results(user_id, query)
+        profiles = self._TEST_LIST
+        self._logger.debug(
+            'Overriding with %d test profiles for user %d',
+            len(profiles),
+            user_id,
+        )
 
         # Ensure only unique profiles are present
         old_count = len(profiles)
