@@ -28,6 +28,9 @@ class MainMenuState(State):
             ],
             [
                 TextButton(MenuToken.FAVORITE),
+                TextButton(MenuToken.BLACKLIST),
+            ],
+            [
                 TextButton(MenuToken.HELP),
             ],
         ],
@@ -38,6 +41,7 @@ class MainMenuState(State):
         MenuToken.SEARCH,
         MenuToken.PROFILE,
         MenuToken.FAVORITE,
+        MenuToken.BLACKLIST,
         MenuToken.HELP,
     )
     """Menu commands accepted for this user state."""
@@ -86,6 +90,13 @@ class MainMenuState(State):
                     session=session,
                     message=message,
                     user_state=UserState.FAVORITE_LIST,
+                )
+
+            case MenuToken.BLACKLIST:
+                yield from self._manager.start(
+                    session=session,
+                    message=message,
+                    user_state=UserState.BLACKLIST,
                 )
 
             case MenuToken.HELP:

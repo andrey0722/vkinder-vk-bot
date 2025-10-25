@@ -5,6 +5,7 @@ import dataclasses
 import enum
 from typing import Literal
 
+from vkinder.model.types import Blacklist
 from vkinder.model.types import Favorite
 from vkinder.model.types import Sex
 from vkinder.model.types import User
@@ -13,6 +14,7 @@ from vkinder.model.types import UserProgress
 from vkinder.model.types import UserState
 
 __all__ = (
+    'Blacklist',
     'Favorite',
     'Sex',
     'User',
@@ -38,11 +40,14 @@ class MenuToken(enum.StrEnum):
     SEARCH = enum.auto()
     PROFILE = enum.auto()
     FAVORITE = enum.auto()
+    BLACKLIST = enum.auto()
     HELP = enum.auto()
     PREV = enum.auto()
     NEXT = enum.auto()
     DELETE_FAVORITE = enum.auto()
     ADD_FAVORITE = enum.auto()
+    DELETE_BLACKLIST = enum.auto()
+    ADD_BLACKLIST = enum.auto()
     GO_BACK = enum.auto()
     AUTH_BEGIN = enum.auto()
     AUTH_FINISHED = enum.auto()
@@ -206,6 +211,21 @@ class ResponseType(enum.IntEnum):
     FAVORITE_RESULT = enum.auto()
     """Show user's favorite list entry."""
 
+    ADDED_TO_BLACKLIST = enum.auto()
+    """Added last found profile to user's blacklist."""
+
+    ADD_TO_BLACKLIST_FAILED = enum.auto()
+    """Failed to add profile to user's blacklist."""
+
+    BLACKLIST_FAILED = enum.auto()
+    """Failed to show user's blacklist."""
+
+    BLACKLIST_EMPTY = enum.auto()
+    """User's blacklist is empty."""
+
+    BLACKLIST_RESULT = enum.auto()
+    """Show user's blacklist entry."""
+
     TEXT = enum.auto()
     """Show text string to user."""
 
@@ -236,6 +256,10 @@ type ResponseTypesGeneric = Literal[
     ResponseType.ADD_TO_FAVORITE_FAILED,
     ResponseType.FAVORITE_LIST_FAILED,
     ResponseType.FAVORITE_LIST_EMPTY,
+    ResponseType.ADDED_TO_BLACKLIST,
+    ResponseType.ADD_TO_BLACKLIST_FAILED,
+    ResponseType.BLACKLIST_FAILED,
+    ResponseType.BLACKLIST_EMPTY,
     ResponseType.PHOTO_FAILED,
 ]
 """All responses supporting without parameters."""
@@ -272,6 +296,7 @@ class ResponseWithUser:
 
 type ResponseTypesWithUserIndex = Literal[
     ResponseType.FAVORITE_RESULT,
+    ResponseType.BLACKLIST_RESULT,
 ]
 """All responses supporting `user` and `index` fields."""
 
@@ -650,7 +675,7 @@ class ResponseFactory:
         *,
         allow_squash: bool = True,
     ) -> Response:
-        """Send greeting text for a new user.
+        """Show user's favorite list entry.
 
         Args:
             profile (User): Found user profile.
@@ -664,6 +689,98 @@ class ResponseFactory:
         """
         return ResponseWithUserIndex(
             type=ResponseType.FAVORITE_RESULT,
+            user=profile,
+            index=index,
+            total=total,
+            allow_squash=allow_squash,
+        )
+
+    @staticmethod
+    def added_to_blacklist(*, allow_squash: bool = True) -> Response:
+        """Added last found profile to user's blacklist.
+
+        Args:
+            allow_squash (bool, optional): Allow response message to be
+                squashed with others. Defaults to True.
+
+        Returns:
+            Response: Bot response to user.
+        """
+        return ResponseGeneric(
+            type=ResponseType.ADDED_TO_BLACKLIST,
+            allow_squash=allow_squash,
+        )
+
+    @staticmethod
+    def add_to_blacklist_failed(*, allow_squash: bool = True) -> Response:
+        """Failed to add profile to user's blacklist.
+
+        Args:
+            allow_squash (bool, optional): Allow response message to be
+                squashed with others. Defaults to True.
+
+        Returns:
+            Response: Bot response to user.
+        """
+        return ResponseGeneric(
+            type=ResponseType.ADD_TO_BLACKLIST_FAILED,
+            allow_squash=allow_squash,
+        )
+
+    @staticmethod
+    def blacklist_failed(*, allow_squash: bool = True) -> Response:
+        """Failed to show user's blacklist.
+
+        Args:
+            allow_squash (bool, optional): Allow response message to be
+                squashed with others. Defaults to True.
+
+        Returns:
+            Response: Bot response to user.
+        """
+        return ResponseGeneric(
+            type=ResponseType.BLACKLIST_FAILED,
+            allow_squash=allow_squash,
+        )
+
+    @staticmethod
+    def blacklist_empty(*, allow_squash: bool = True) -> Response:
+        """User's blacklist is empty.
+
+        Args:
+            allow_squash (bool, optional): Allow response message to be
+                squashed with others. Defaults to True.
+
+        Returns:
+            Response: Bot response to user.
+        """
+        return ResponseGeneric(
+            type=ResponseType.BLACKLIST_EMPTY,
+            allow_squash=allow_squash,
+        )
+
+    @staticmethod
+    def blacklist_result(
+        profile: User,
+        index: int,
+        total: int,
+        *,
+        allow_squash: bool = True,
+    ) -> Response:
+        """Show user's blacklist entry.
+
+        Args:
+            profile (User): Found user profile.
+            index (int): User profile index number.
+            total (int): Total number of user profiles.
+            allow_squash (bool, optional): Allow response message to be
+                squashed with others. Defaults to True.
+
+        Returns:
+            Response: Bot response to user.
+        """
+        return ResponseWithUserIndex(
+            type=ResponseType.BLACKLIST_RESULT,
             user=profile,
             index=index,
             total=total,

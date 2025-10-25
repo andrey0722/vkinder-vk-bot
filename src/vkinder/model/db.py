@@ -1,7 +1,6 @@
 """This module defines logic of database interaction.."""
 
 from collections.abc import Callable
-from collections.abc import Iterator
 from types import TracebackType
 from typing import Self
 
@@ -15,6 +14,7 @@ from vkinder.log import get_logger
 
 from .exceptions import DatabaseError
 from .log import set_sqlalchemy_debug_filter
+from .types import Blacklist
 from .types import Favorite
 from .types import ModelBaseType
 from .types import User
@@ -260,11 +260,11 @@ class DatabaseSession:
 
         self._logger.debug('Deleted auth data for %d', user_id)
 
-    def favorite_exists(self, user: User, profile_id: int) -> bool:
+    def favorite_exists(self, user_id: int, profile_id: int) -> bool:
         """Checks whether the DB contains favorite record with profile id.
 
         Args:
-            user (User): User object.
+            user_id (int): User id.
             profile_id (int): Profile id.
 
         Returns:
@@ -274,48 +274,43 @@ class DatabaseSession:
             DatabaseError: DB operational error.
         """
         self._logger.debug(
-            'Checking if favorite %d exists for user %r',
+            'Checking if favorite %d exists for user %d',
             profile_id,
-            user,
+            user_id,
         )
-        return self.get_favorite(user, profile_id) is not None
-
-    def get_favorite(self, user: User, profile_id: int) -> Favorite | None:
-        """Extracts a favorite record from the DB using profile id.
-
-        Args:
-            user (User): User object.
-            profile_id (int): Profile id.
-
-        Returns:
-            Favorite | None: Found favorite record for this id if any,
-                otherwise `None`.
-
-        Raises:
-            DatabaseError: DB operational error.
-        """
-        self._logger.debug('Extracting favorite %d for %r', profile_id, user)
         try:
-            favorite = self._session.get(Favorite, (user.id, profile_id))
+            stmt = sa.select(
+                sa.select(Favorite)
+                .where(
+                    Favorite.user_id == user_id,
+                    Favorite.profile_id == profile_id,
+                )
+                .exists()
+            )
+            exists = self._session.scalar(stmt) or False
         except exc.SQLAlchemyError as e:
             me = _create_db_error(e)
             self._logger.error(
-                'Get favorite error: user=%r, profile_id=%d, error=%s',
-                user,
+                'Check favorite error: user=%d, profile_id=%d, error=%s',
+                user_id,
                 profile_id,
                 e,
             )
             raise me from e
 
-        if favorite is not None:
-            self._logger.debug('Favorite exists: %r', favorite)
+        if exists:
+            self._logger.debug(
+                'Favorite %d exists for user %d',
+                profile_id,
+                user_id,
+            )
         else:
             self._logger.debug(
-                'Favorite %s does not exist for user %r',
+                'Favorite %d does not exist for user %d',
                 profile_id,
-                user,
+                user_id,
             )
-        return favorite
+        return exists
 
     def get_favorite_index(self, user: User, index: int) -> Favorite | None:
         """Extracts a favorite record from the DB using its positional index.
@@ -371,7 +366,7 @@ class DatabaseSession:
         Raises:
             DatabaseError: DB operational error.
         """
-        self._logger.debug('Adding user %r', favorite)
+        self._logger.debug('Adding favorite %r', favorite)
         try:
             self._session.add(favorite)
         except exc.SQLAlchemyError as e:
@@ -385,40 +380,34 @@ class DatabaseSession:
         self,
         user: User,
         profile_id: int,
-    ) -> Favorite | None:
+    ) -> None:
         """Delete a particular favorite record for a user.
 
         Args:
             user (User): User object.
             profile_id (int): Profile id that the user has added as favorite.
 
-        Returns:
-            Favorite | None: Favorite record deleted from the DB if any.
-
         Raises:
             DatabaseError: DB operational error.
         """
         self._logger.debug('Deleting favorite %d from %r', profile_id, user)
         try:
-            stmt = (
-                user.favorites.delete()
-                .where(Favorite.profile_id == profile_id)
-                .returning(Favorite)
+            stmt = user.favorites.delete().where(
+                Favorite.profile_id == profile_id
             )
-            favorite = self._session.scalar(stmt)
+            self._session.execute(stmt)
         except exc.SQLAlchemyError as e:
             me = _create_db_error(e)
             self._logger.error('Delete: favorite=%d, error=%s', profile_id, e)
             raise me from e
 
-        self._logger.debug('Deleted favorite %r from %r', favorite, user)
-        return favorite
+        self._logger.debug('Deleted favorite %d from %r', profile_id, user)
 
-    def get_favorite_count(self, user: User) -> int:
+    def get_favorite_count(self, user_id: int) -> int:
         """Extracts a number of favorite profile records for a user.
 
         Args:
-            user (User): User object.
+            user_id (int): User id.
 
         Returns:
             int: Number of favorite profile records for a user.
@@ -426,57 +415,252 @@ class DatabaseSession:
         Raises:
             DatabaseError: DB operational error.
         """
-        self._logger.debug('Extracting favorite count for %r', user)
+        self._logger.debug('Extracting favorite count for %d', user_id)
         try:
             stmt = (
                 sa.select(func.count())
-                .join(User.favorites)
-                .where(User.id == user.id)
+                .select_from(Favorite)
+                .where(Favorite.user_id == user_id)
             )
             count = self._session.scalar(stmt) or 0
         except exc.SQLAlchemyError as e:
             me = _create_db_error(e)
             self._logger.error(
-                'Get favorite count: user=%r, error=%s',
-                user,
+                'Get favorite count: user=%d, error=%s',
+                user_id,
                 e,
             )
             raise me from e
 
-        self._logger.debug('Favorite count %d for %r', count, user)
+        self._logger.debug('Favorite count %d for %d', count, user_id)
         return count
 
-    def get_favorites(self, user: User) -> Iterator[Favorite]:
-        """Extracts a sequence of all favorite records for a user.
+    def blacklist_exists(self, user_id: int, profile_id: int) -> bool:
+        """Checks whether the DB contains blacklist record with profile id.
 
         Args:
-            user (User): User object.
+            user_id (int): User id.
+            profile_id (int): Profile id.
 
         Returns:
-            Iterable[Favorite]: Favorite records for the user.
+            bool: `True` is the record exists, otherwise `False`.
 
         Raises:
             DatabaseError: DB operational error.
         """
-        self._logger.debug('Extracting favorites for %r', user)
+        self._logger.debug(
+            'Checking if blacklist %d exists for user %d',
+            profile_id,
+            user_id,
+        )
         try:
-            # Get favorite count first
-            count = self.get_favorite_count(user)
-
-            # Now extract user favorites in batches
-            stmt = user.favorites.select().execution_options(yield_per=10)
-            favorites = self._session.scalars(stmt)
+            stmt = sa.select(
+                sa.select(Blacklist)
+                .where(
+                    Blacklist.user_id == user_id,
+                    Blacklist.profile_id == profile_id,
+                )
+                .exists()
+            )
+            exists = self._session.scalar(stmt) or False
         except exc.SQLAlchemyError as e:
             me = _create_db_error(e)
             self._logger.error(
-                'Get favorites error: user=%r, error=%s',
-                user,
+                'Check blacklist error: user=%d, profile_id=%d, error=%s',
+                user_id,
+                profile_id,
                 e,
             )
             raise me from e
 
-        self._logger.debug('Extracted %d favorites for %r', count, user)
-        return favorites
+        if exists:
+            self._logger.debug(
+                'Blacklist %d exists for user %d',
+                profile_id,
+                user_id,
+            )
+        else:
+            self._logger.debug(
+                'Blacklist %d does not exist for user %d',
+                profile_id,
+                user_id,
+            )
+        return exists
+
+    def filter_non_blacklisted(
+        self,
+        user_id: int,
+        profiles: list[int],
+    ) -> list[int]:
+        """Filters out all blacklisted profile ids for the user.
+
+        Args:
+            user_id (int): User id.
+            profiles (list[int]): Profile ids list.
+
+        Returns:
+            list[int]: Filtered list of profile ids that are not blacklisted.
+
+        Raises:
+            DatabaseError: DB operational error.
+        """
+        self._logger.debug(
+            'Filtering non-blacklisted %d profiles for user %d',
+            len(profiles),
+            user_id,
+        )
+        try:
+            stmt = sa.select(Blacklist.profile_id).where(
+                Blacklist.user_id == user_id,
+                Blacklist.profile_id.in_(profiles),
+            )
+            blacklist = self._session.scalars(stmt).all()
+        except exc.SQLAlchemyError as e:
+            me = _create_db_error(e)
+            self._logger.error(
+                'Check blacklist error: user=%d, profiles=%d, error=%s',
+                user_id,
+                len(profiles),
+                e,
+            )
+            raise me from e
+
+        blacklist = set(blacklist)
+        result = [x for x in profiles if x not in blacklist]
+        self._logger.debug(
+            'Filtered %d of %d non-blacklisted user %d',
+            len(result),
+            len(profiles),
+            user_id,
+        )
+        return result
+
+    def get_blacklist_index(self, user: User, index: int) -> Blacklist | None:
+        """Extracts a blacklist record from the DB using its positional index.
+
+        Args:
+            user (User): User object.
+            index (int): Record positional index.
+
+        Returns:
+            Blacklist | None: Found blacklist record for this index if any,
+                otherwise `None`.
+
+        Raises:
+            DatabaseError: DB operational error.
+        """
+        self._logger.debug('Extracting blacklist index %d for %r', index, user)
+        try:
+            stmt = (
+                user.blacklist.select()
+                .order_by(Blacklist.created_at)
+                .offset(index)
+                .limit(1)
+            )
+            blacklist = self._session.scalar(stmt)
+        except exc.SQLAlchemyError as e:
+            me = _create_db_error(e)
+            self._logger.error(
+                'Get blacklist error: user=%r, index=%d, error=%s',
+                user,
+                index,
+                e,
+            )
+            raise me from e
+
+        if blacklist is not None:
+            self._logger.debug(
+                'Blacklist index %d exists: %r',
+                index,
+                blacklist,
+            )
+        else:
+            self._logger.debug(
+                'Blacklist index %d does not exist for user %r',
+                index,
+                user,
+            )
+        return blacklist
+
+    def add_blacklist(self, blacklist: Blacklist) -> None:
+        """Adds new blacklist record into the DB.
+
+        Input object could be modified in-place to respect current DB state.
+
+        Args:
+            blacklist (Blacklist): Blacklist object.
+
+        Raises:
+            DatabaseError: DB operational error.
+        """
+        self._logger.debug('Adding blacklist %r', blacklist)
+        try:
+            self._session.add(blacklist)
+        except exc.SQLAlchemyError as e:
+            me = _create_db_error(e)
+            self._logger.error('Add blacklist: obj=%r, error=%s', blacklist, e)
+            raise me from e
+
+        self._logger.debug('Added blacklist %r', blacklist)
+
+    def delete_blacklist(
+        self,
+        user: User,
+        profile_id: int,
+    ) -> None:
+        """Delete a particular blacklist record for a user.
+
+        Args:
+            user (User): User object.
+            profile_id (int): Profile id that the user has added as blacklist.
+
+        Raises:
+            DatabaseError: DB operational error.
+        """
+        self._logger.debug('Deleting blacklist %d from %r', profile_id, user)
+        try:
+            stmt = user.blacklist.delete().where(
+                Blacklist.profile_id == profile_id
+            )
+            self._session.execute(stmt)
+        except exc.SQLAlchemyError as e:
+            me = _create_db_error(e)
+            self._logger.error('Delete: blacklist=%d, error=%s', profile_id, e)
+            raise me from e
+
+        self._logger.debug('Deleted blacklist %d from %r', profile_id, user)
+
+    def get_blacklist_count(self, user_id: int) -> int:
+        """Extracts a number of blacklist profile records for a user.
+
+        Args:
+            user_id (int): User id.
+
+        Returns:
+            int: Number of blacklist profile records for a user.
+
+        Raises:
+            DatabaseError: DB operational error.
+        """
+        self._logger.debug('Extracting blacklist count for %d', user_id)
+        try:
+            stmt = (
+                sa.select(func.count())
+                .select_from(Blacklist)
+                .where(Blacklist.user_id == user_id)
+            )
+            count = self._session.scalar(stmt) or 0
+        except exc.SQLAlchemyError as e:
+            me = _create_db_error(e)
+            self._logger.error(
+                'Get blacklist count: user=%d, error=%s',
+                user_id,
+                e,
+            )
+            raise me from e
+
+        self._logger.debug('Blacklist count %d for %d', count, user_id)
+        return count
 
     def save_user_progress(self, progress: UserProgress) -> UserProgress:
         """Save a user progress instance for user.

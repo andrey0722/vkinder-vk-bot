@@ -30,6 +30,12 @@ from vkinder.shared_types import TextButton
 from vkinder.shared_types import User
 from vkinder.shared_types import UserSearchQuery
 
+VK_SEARCH_MAX_SIZE = 1000
+"""VK API limits search query results to 1000 no matter what."""
+
+VK_SEARCH_CHUNK_SIZE = 100
+"""Perform search query by limited chunks."""
+
 
 class VkHasCount(TypedDict):
     """VK object that contains "count" field."""
@@ -477,47 +483,11 @@ class VkService:
             return False
         return True
 
-    def get_search_result_size(
+    def search_users(
         self,
         query: UserSearchQuery,
         access_token: str | None = None,
-    ) -> int:
-        """Requests number of user profiles in search result for query.
-
-        Args:
-            query (UserSearchQuery): Search query object.
-            access_token (str | None, optional): User access token for
-                API call. Defaults to None.
-
-        Raises:
-            VkApiError: Error when using VK API.
-
-        Returns:
-            int: Number of user profiles in search result.
-        """
-        self._logger.debug('Getting search result size for query %r', query)
-        params = VkUsersSearchParams(count=0)
-        _add_search_query(params, query)
-        if access_token is not None:
-            params['access_token'] = access_token
-
-        try:
-            response = self._vk.method('users.search', params)
-        except vk_api.exceptions.VkApiError as e:
-            self._logger.error('Get search result size error: %s', e)
-            _reraise(e)
-
-        # Use type checker for VK API response
-        response = cast(VkUsersSearchResult, response)
-        count = response['count']
-        self._logger.debug('Search result size %d for query %r', count, query)
-        return count
-
-    def search_user(
-        self,
-        query: UserSearchQuery,
-        access_token: str | None = None,
-    ) -> User | None:
+    ) -> Iterator[int]:
         """Perform user search using specified search query.
 
         Args:
@@ -526,41 +496,28 @@ class VkService:
                 API call. Defaults to None.
 
         Returns:
-            User | None: User profile found if any.
+            Iterator[int]: User profile ids found if any.
 
         Raises:
             VkApiError: Error when using VK API.
         """
         self._logger.debug('Searching users with query %r', query)
 
-        # To extract random user we must know number of users in search result
-        total = self.get_search_result_size(query, access_token)
-        if not total:
-            self._logger.warning('No results for query %r', query)
-            return None
+        params = VkUsersSearchParams(fields='')
+        _add_search_query(params, query)
+        if access_token is not None:
+            params['access_token'] = access_token
 
-        # VK API limits search query results to 1000 no matter what
-        effective_total = min(total, 1000)
-
-        for attempt in range(20):
-            # There are users in search results. But VK API sometimes
-            # fails to return results when calling API with big
-            # offset <= 1000. So retry for some time until found.
-            random_offset = random.randint(0, effective_total)
+        # Perform user search by chunks
+        for offset in range(0, VK_SEARCH_MAX_SIZE, VK_SEARCH_CHUNK_SIZE):
+            params['count'] = VK_SEARCH_CHUNK_SIZE
+            params['offset'] = offset
             self._logger.debug(
-                'Search attempt %d with offset %d',
-                attempt,
-                random_offset,
+                'Extracting search result %d -> %d with query %r',
+                offset,
+                offset + VK_SEARCH_CHUNK_SIZE,
+                query
             )
-
-            params = VkUsersSearchParams(
-                count=1,
-                offset=random_offset,
-                fields=_REQUEST_USER_FIELDS_STR,
-            )
-            _add_search_query(params, query)
-            if access_token is not None:
-                params['access_token'] = access_token
 
             try:
                 response = self._vk.method('users.search', params)
@@ -571,17 +528,24 @@ class VkService:
             # Use type checker for VK API response
             response = cast(VkUsersSearchResult, response)
 
-            if users := response.get('items'):
-                user = _convert_user(users[0])
-                self._logger.debug(
-                    'Found user on %d attempt: %r',
-                    attempt,
-                    user,
-                )
-                return user
+            users = response['items']
+            count = len(users)
+            self._logger.debug(
+                'Found %d (%d) users with query %r',
+                count,
+                response['count'],
+                query,
+            )
+            for user in users:
+                yield user['id']
 
-        self._logger.warning('No users found for query %r', query)
-        return None
+            # VK API can limit us even more than max search size
+            if count < VK_SEARCH_CHUNK_SIZE:
+                self._logger.debug(
+                    'Prematurely finishing search with query %r',
+                    query,
+                )
+                break
 
     def get_user_profile(self, user_id: int) -> User:
         """Extract user profile by their profile id.

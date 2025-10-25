@@ -145,19 +145,17 @@ class State(abc.ABC):
         self._logger.debug('Sending keyboard: %r', keyboard)
         return ResponseFactory.keyboard(keyboard)
 
-    def create_keyboard(self, message: InputMessage) -> Keyboard:
+    def create_keyboard(self, _message: InputMessage) -> Keyboard:
         """Creates bot keyboard for this user state.
 
         Args:
-            message (InputMessage): A message from user.
+            _message (InputMessage): A message from user.
 
         Returns:
             Keyboard: Bit keyboard object.
         """
-        user_id = message.user.id
         # Duplicate keyboard to prevent messing it up
         keyboard = copy.deepcopy(self.KEYBOARD)
-        self._logger.debug('Keyboard for user %d: %r', user_id, keyboard)
         return keyboard
 
     def attach_profile_photos(

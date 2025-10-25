@@ -10,6 +10,7 @@ from vkinder.shared_types import UserState
 
 from .auth import AuthState
 from .auth_provider import AuthProvider
+from .blacklist import BlacklistState
 from .favorite_list import FavoriteListState
 from .main_menu import MainMenuState
 from .new_user import NewUserState
@@ -42,6 +43,7 @@ class StateManager:
             UserState.SEARCHING: SearchingState(self),
             UserState.AUTH: AuthState(self),
             UserState.FAVORITE_LIST: FavoriteListState(self),
+            UserState.BLACKLIST: BlacklistState(self),
         }
 
     @property

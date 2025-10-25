@@ -1,6 +1,7 @@
 """This module provides means to get profile info."""
 
 import abc
+from collections.abc import Iterator
 from typing import Protocol
 
 from vkinder.exceptions import VkinderError
@@ -83,11 +84,11 @@ class ProfileProvider(Protocol):
         """
 
     @abc.abstractmethod
-    def search_user(
+    def search_users(
         self,
         query: UserSearchQuery,
         access_token: str | None = None,
-    ) -> User | None:
+    ) -> Iterator[int]:
         """Perform user search using specified search query.
 
         Args:
@@ -100,5 +101,5 @@ class ProfileProvider(Protocol):
             ProfileProviderError: Error when searching users.
 
         Returns:
-            User | None: User profile found if any.
+            Iterator[int]: User profile ids found if any.
         """

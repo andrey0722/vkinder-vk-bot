@@ -1,10 +1,12 @@
 """This module shows search results to user and handles user commands."""
 
 from collections.abc import Iterator
+import random
 from typing import ClassVar, Final, override
 
 from vkinder.model import ModelError
 from vkinder.model.db import DatabaseSession
+from vkinder.shared_types import Blacklist
 from vkinder.shared_types import ButtonColor
 from vkinder.shared_types import Favorite
 from vkinder.shared_types import InputMessage
@@ -54,7 +56,10 @@ class SearchingState(State):
         button_rows=[
             [
                 TextButton(MenuToken.NEXT, ButtonColor.PRIMARY),
+            ],
+            [
                 TextButton(MenuToken.ADD_FAVORITE),
+                TextButton(MenuToken.ADD_BLACKLIST, ButtonColor.NEGATIVE),
             ],
             [
                 TextButton(MenuToken.GO_BACK),
@@ -67,6 +72,7 @@ class SearchingState(State):
     MENU_OPTIONS: ClassVar[tuple[MenuToken, ...]] = (
         MenuToken.NEXT,
         MenuToken.ADD_FAVORITE,
+        MenuToken.ADD_BLACKLIST,
         MenuToken.GO_BACK,
         MenuToken.HELP,
     )
@@ -80,11 +86,12 @@ class SearchingState(State):
     ) -> Iterator[Response]:
         with session.begin():
             user = message.user
-        self._logger.info('Starting for user %d', user.id)
+            user_id = user.id
+        self._logger.info('Starting for user %d', user_id)
         yield self.show_keyboard(message)
 
         # Check user authorization
-        token = self.get_user_token(session, user.id)
+        token = self.get_user_token(session, user_id)
         if token is None:
             # Request authorization from user
             yield from self._manager.start_auth(session, message)
@@ -99,10 +106,10 @@ class SearchingState(State):
 
         # Everything is OK, try to search
         try:
-            profile = self.profile_provider.search_user(query, token)
+            yield from self._search(session, message, token, query)
         except ProfileProviderTokenError:
             # Problem with the token
-            if self.get_user_token(session, user.id) is None:
+            if self.get_user_token(session, user_id) is None:
                 yield from self._manager.start_auth(session, message)
             else:
                 yield ResponseFactory.search_error()
@@ -111,23 +118,6 @@ class SearchingState(State):
             yield ResponseFactory.search_error()
             yield from self._manager.start_main_menu(session, message)
             return
-
-        if profile:
-            profile_id = profile.id
-            self._logger.info('Found profile %d', profile_id)
-
-            # Save profile id to be able to add it to favorite list
-            try:
-                with session.begin():
-                    progress = message.progress
-                    progress.last_found_id = profile_id
-            except ModelError:
-                self._logger.warning('Failed to save last found profile')
-            yield ResponseFactory.search_result(profile)
-            yield from self.attach_profile_photos(profile.id, token)
-        else:
-            yield ResponseFactory.search_failed()
-            yield from self._manager.start_main_menu(session, message)
 
     @override
     def respond(
@@ -152,6 +142,10 @@ class SearchingState(State):
 
             case MenuToken.ADD_FAVORITE:
                 yield from self._add_favorite(session, message)
+                yield ResponseFactory.select_menu()
+
+            case MenuToken.ADD_BLACKLIST:
+                yield from self._add_blacklist(session, message)
                 yield ResponseFactory.select_menu()
 
             case MenuToken.GO_BACK:
@@ -206,6 +200,63 @@ class SearchingState(State):
             age_max=age_max,
         )
 
+    def _search(
+        self,
+        session: DatabaseSession,
+        message: InputMessage,
+        token: str,
+        query: UserSearchQuery,
+    ) -> Iterator[Response]:
+        """Performs user search and shows result to user.
+
+        Args:
+            session (DatabaseSession): Session object.
+            message (InputMessage): A message from user.
+            token (str): User access token.
+            query (UserSearchQuery): User search query object.
+
+        Yields:
+            Iterator[Response]: Bot responses to the user.
+        """
+        user_id = message.user.id
+        profiles = list(self.profile_provider.search_users(query, token))
+
+        # Apply blacklist
+        with session.begin():
+            old_count = len(profiles)
+            profiles = session.filter_non_blacklisted(user_id, profiles)
+
+        self._logger.info(
+            'Found %d (%d) profiles for user %d',
+            len(profiles),
+            old_count,
+            user_id,
+        )
+
+        if profiles:
+            profile_id = random.choice(profiles)
+            self._logger.info(
+                'Selected profile %d for user %d',
+                profile_id,
+                user_id,
+            )
+
+            profile = self.profile_provider.get_user_profile(profile_id)
+
+            # Save profile id to be able to add it to favorite list
+            try:
+                with session.begin():
+                    progress = message.progress
+                    progress.last_found_id = profile_id
+            except ModelError:
+                self._logger.warning('Failed to save last found profile')
+            yield ResponseFactory.search_result(profile)
+            yield from self.attach_profile_photos(profile.id, token)
+        else:
+            self._logger.warning('No profiles found for user %d', user_id)
+            yield ResponseFactory.search_failed()
+            yield from self._manager.start_main_menu(session, message)
+
     def _add_favorite(
         self,
         session: DatabaseSession,
@@ -226,7 +277,8 @@ class SearchingState(State):
         if profile_id is not None:
             try:
                 with session.begin():
-                    if not session.favorite_exists(user, profile_id):
+                    session.delete_blacklist(user, profile_id)
+                    if not session.favorite_exists(user_id, profile_id):
                         session.add_favorite(Favorite(user, profile_id))
             except ModelError:
                 self._logger.error(
@@ -240,3 +292,39 @@ class SearchingState(State):
             self._logger.error('No saved last found for user %d', user_id)
 
         yield ResponseFactory.add_to_favorite_failed()
+
+    def _add_blacklist(
+        self,
+        session: DatabaseSession,
+        message: InputMessage,
+    ) -> Iterator[Response]:
+        """Internal helper to add last found profile to blacklist.
+
+        Args:
+            session (DatabaseSession): Session object.
+            message (InputMessage): A message from user.
+
+        Returns:
+            Iterator[Response]: Bot responses to the user.
+        """
+        user = message.user
+        user_id = user.id
+        profile_id = message.progress.last_found_id
+        if profile_id is not None:
+            try:
+                with session.begin():
+                    session.delete_favorite(user, profile_id)
+                    if not session.blacklist_exists(user_id, profile_id):
+                        session.add_blacklist(Blacklist(user, profile_id))
+            except ModelError:
+                self._logger.error(
+                    'Failed to add blacklist for user %d',
+                    user_id,
+                )
+            else:
+                yield ResponseFactory.added_to_blacklist()
+                return
+        else:
+            self._logger.error('No saved last found for user %d', user_id)
+
+        yield ResponseFactory.add_to_blacklist_failed()

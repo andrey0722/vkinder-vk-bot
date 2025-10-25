@@ -25,6 +25,7 @@ class UserState(enum.StrEnum):
     SEARCHING = enum.auto()
     AUTH = enum.auto()
     FAVORITE_LIST = enum.auto()
+    BLACKLIST = enum.auto()
 
 
 @enum.unique
@@ -106,6 +107,15 @@ class User(ModelBaseType):
         repr=False,
     )
     """User's favorite profile list."""
+
+    blacklist: WriteOnlyMapped['Blacklist'] = orm.relationship(
+        back_populates='user',
+        cascade='all, delete-orphan',
+        passive_deletes=True,
+        init=False,
+        repr=False,
+    )
+    """User's blacklisted profile list."""
 
     @property
     def age(self) -> int | None:
@@ -191,11 +201,17 @@ class UserProgress(ModelBaseType):
     last_found_id: Mapped[int] = orm.mapped_column(default=0)
     """Profile id displayed to the user in last search query."""
 
-    last_fav_index: Mapped[int] = orm.mapped_column(default=0)
+    last_favorite_index: Mapped[int] = orm.mapped_column(default=0)
     """Favorite record positional index."""
 
-    last_fav_id: Mapped[int] = orm.mapped_column(default=0)
+    last_favorite_id: Mapped[int] = orm.mapped_column(default=0)
     """Profile id that the user has added as favorite."""
+
+    last_blacklist_index: Mapped[int] = orm.mapped_column(default=0)
+    """Blacklist record positional index."""
+
+    last_blacklist_id: Mapped[int] = orm.mapped_column(default=0)
+    """Profile id that the user has added as blacklisted."""
 
 
 class Favorite(ModelBaseType):
@@ -213,6 +229,30 @@ class Favorite(ModelBaseType):
 
     profile_id: Mapped[int] = orm.mapped_column(primary_key=True)
     """Profile id that the user has added as favorite."""
+
+    created_at: Mapped[datetime.datetime] = orm.mapped_column(
+        sa.DateTime,
+        server_default=func.now(),
+        init=False,
+    )
+    """Date and time when this record was created."""
+
+
+class Blacklist(ModelBaseType):
+    """Represents one record in user's blacklisted profile list."""
+
+    __tablename__ = 'blacklist'
+
+    user_id: Mapped[int] = orm.mapped_column(
+        sa.ForeignKey('user.id', ondelete='CASCADE'),
+        primary_key=True,
+        init=False,
+    )
+    user: Mapped[User] = orm.relationship(back_populates='blacklist')
+    """Bot user that owns this record."""
+
+    profile_id: Mapped[int] = orm.mapped_column(primary_key=True)
+    """Profile id that the user has added as blacklisted."""
 
     created_at: Mapped[datetime.datetime] = orm.mapped_column(
         sa.DateTime,

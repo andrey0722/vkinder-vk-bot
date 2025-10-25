@@ -194,6 +194,10 @@ _GENERIC_TO_TEXT: Final[dict[ResponseTypesGeneric, str]] = {
     ResponseType.ADD_TO_FAVORITE_FAILED: Strings.ADD_TO_FAVORITE_FAILED,
     ResponseType.FAVORITE_LIST_FAILED: Strings.FAVORITE_LIST_FAILED,
     ResponseType.FAVORITE_LIST_EMPTY: Strings.FAVORITE_LIST_EMPTY,
+    ResponseType.ADDED_TO_BLACKLIST: Strings.ADDED_TO_BLACKLIST,
+    ResponseType.ADD_TO_BLACKLIST_FAILED: Strings.ADD_TO_BLACKLIST_FAILED,
+    ResponseType.BLACKLIST_FAILED: Strings.BLACKLIST_FAILED,
+    ResponseType.BLACKLIST_EMPTY: Strings.BLACKLIST_EMPTY,
     ResponseType.PHOTO_FAILED: Strings.PHOTO_URLS_FAILED,
 }
 
@@ -273,12 +277,19 @@ def _render_with_user_index(
     """
     match response.type:
         case ResponseType.FAVORITE_RESULT:
-            profile = response.user
             heading = Strings.HEADING_FAVORITE_TEMPLATE.format(
                 index=response.index,
                 total=response.total,
             )
-            text = format_profile(profile, heading=heading)
+            text = format_profile(response.user, heading=heading)
+            return create_message(user, text)
+
+        case ResponseType.BLACKLIST_RESULT:
+            heading = Strings.HEADING_BLACKLIST_TEMPLATE.format(
+                index=response.index,
+                total=response.total,
+            )
+            text = format_profile(response.user, heading=heading)
             return create_message(user, text)
 
     raise NotImplementedError
