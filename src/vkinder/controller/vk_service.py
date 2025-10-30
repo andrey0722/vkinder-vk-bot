@@ -333,6 +333,7 @@ class VkService:
         """
         self._logger = get_logger(self)
         self._vk = self._create_vk(config.vk_community_token)
+        self._vk_user = self._create_vk(config.vk_user_token)
         self._upload = vk_api.VkUpload(self._vk)
         self._longpoll = self._create_longpoll()
         self._http = requests.Session()
@@ -343,14 +344,6 @@ class VkService:
         self._vk.http.close()
         self._upload.http.close()
         self._longpoll.session.close()
-
-    def get_user_access_rights(self) -> str:
-        """Returns required access right set for user account.
-
-        Returns:
-            str: Access right set.
-        """
-        return 'photos'
 
     def listen(self) -> Iterator[Event]:
         """Retrieves events from VK longpoll server.
@@ -368,14 +361,14 @@ class VkService:
         """
         return self._log_events(filter(self._is_message_event, self._listen()))
 
-    def get_group_id(self) -> int:
-        """Retrieves current group id from VK API.
+    def get_group_id(self) -> tuple[int, str]:
+        """Retrieves current group id and name from VK API.
 
         Raises:
             VkApiError: Error when using VK API.
 
         Returns:
-            int: Current group id.
+            tuple[int, str]: Group id, group name.
         """
         self._logger.debug('Getting group id')
         params = VkGroupsGetByIdParams()
@@ -390,8 +383,9 @@ class VkService:
         response = cast(VkGroupsGetByIdResult, response)
         group = response[0]
         group_id = group['id']
-        self._logger.debug('Group id %d, name="%s"', group_id, group['name'])
-        return group_id
+        group_name = group['name']
+        self._logger.debug('Group id %d, name="%s"', group_id, group_name)
+        return group_id, group_name
 
     def check_messages(self) -> Iterator[Event]:
         """Retrieves message events from VK longpoll server.
@@ -477,25 +471,6 @@ class VkService:
         self._logger.debug('Photo uploaded: %r', photo)
         return photo
 
-    def validate_access_token(self, access_token: str | None) -> bool:
-        """Tests if provided user access token is valid for API calls.
-
-        Args:
-            access_token (str | None): User access token.
-
-        Returns:
-            bool: `True` if valid, otherwise `False`.
-        """
-        params = VkTrackVisitorParams()
-        if access_token is not None:
-            params['access_token'] = access_token
-        try:
-            self._vk.method('stats.trackVisitor', params)
-        except vk_api.exceptions.ApiError as e:
-            self._logger.error('User access token error: %s', e)
-            return False
-        return True
-
     def search_users(
         self,
         query: UserSearchQuery,
@@ -533,7 +508,7 @@ class VkService:
             )
 
             try:
-                response = self._vk.method('users.search', params)
+                response = self._vk_user.method('users.search', params)
             except vk_api.exceptions.VkApiError as e:
                 self._logger.error('User search error: %s', e)
                 _reraise(e)
@@ -626,7 +601,6 @@ class VkService:
         *,
         sort_by_likes: bool = False,
         limit: int | None = None,
-        access_token: str | None = None,
     ) -> list[Photo]:
         """Extracts user profile photos with optional sorting.
 
@@ -636,8 +610,6 @@ class VkService:
                 descending order. Defaults to `False`.
             limit (int | None, optional): Limit result up to `limit`
                 photos if specified. Defaults to `None`.
-            access_token (str | None, optional): User access token for
-                API call. Defaults to None.
 
         Raises:
             VkApiError: Error when using VK API.
@@ -647,20 +619,8 @@ class VkService:
         """
         self._logger.debug('Extracting photos from user %d', user_id)
 
-        params = VkPhotosGetParams(
-            owner_id=user_id,
-            album_id='profile',
-            photo_ids=0,
-            extended=1,
-        )
-        if access_token is not None:
-            params['access_token'] = access_token
-
         try:
-            photos = self.get_user_photos_raw(
-                user_id=user_id,
-                access_token=access_token,
-            )
+            photos = self.get_user_photos_raw(user_id)
         except VkServiceError:
             # Try to get just user profile avatar
             user = self.get_user_profile_raw(user_id)
@@ -697,18 +657,11 @@ class VkService:
             result = result[:limit]
         return result
 
-    def get_user_photos_raw(
-        self,
-        user_id: int,
-        *,
-        access_token: str | None = None,
-    ) -> list[VkPhotoEx]:
+    def get_user_photos_raw(self, user_id: int) -> list[VkPhotoEx]:
         """Extracts user profile photos in raw VK API format.
 
         Args:
             user_id (int): User profile id.
-            access_token (str | None, optional): User access token for
-                API call. Defaults to None.
 
         Raises:
             VkApiError: Error when using VK API.
@@ -724,11 +677,9 @@ class VkService:
             photo_ids=0,
             extended=1,
         )
-        if access_token is not None:
-            params['access_token'] = access_token
 
         try:
-            response = self._vk.method('photos.get', params)
+            response = self._vk_user.method('photos.get', params)
         except vk_api.exceptions.VkApiError as e:
             self._logger.error('Get photo for user %d: %s', user_id, e)
             _reraise(e)

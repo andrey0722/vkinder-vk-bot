@@ -3,7 +3,6 @@
 import dataclasses
 import datetime
 import enum
-from typing import Any
 
 import sqlalchemy as sa
 from sqlalchemy import orm
@@ -23,7 +22,6 @@ class UserState(enum.StrEnum):
     NEW_USER = enum.auto()
     MAIN_MENU = enum.auto()
     SEARCHING = enum.auto()
-    AUTH = enum.auto()
     FAVORITE_LIST = enum.auto()
     BLACKLIST = enum.auto()
 
@@ -83,14 +81,6 @@ class User(ModelBaseType):
     )
     """Current user state."""
 
-    auth_data: Mapped['UserAuthData | None'] = orm.relationship(
-        back_populates='user',
-        cascade='all, delete-orphan',
-        init=False,
-        repr=False,
-    )
-    """User authorization data."""
-
     user_progress: Mapped['UserProgress | None'] = orm.relationship(
         back_populates='user',
         cascade='all, delete-orphan',
@@ -133,51 +123,6 @@ class User(ModelBaseType):
             # Birthday hasn't pass at this year
             age -= 1
         return age
-
-
-class UserAuthData(ModelBaseType):
-    """Holds data from user authorization."""
-
-    __tablename__ = 'auth_data'
-
-    user_id: Mapped[int] = orm.mapped_column(
-        sa.ForeignKey('user.id', ondelete='CASCADE'),
-        primary_key=True,
-    )
-    user: Mapped[User] = orm.relationship(
-        back_populates='auth_data',
-        init=False,
-        repr=False,
-    )
-    """Bot user that owns this record."""
-
-    access_token: Mapped[str] = orm.mapped_column(sa.String(400))
-    """VK API user access token."""
-
-    refresh_token: Mapped[str] = orm.mapped_column(sa.String(400))
-    """VK ID token to refresh access token."""
-
-    device_id: Mapped[str] = orm.mapped_column(sa.String(400))
-    """Identifier of authorization device, required for refreshing."""
-
-    expire_time: Mapped[datetime.datetime] = orm.mapped_column(sa.DateTime)
-    """Time when user access token becomes invalidated."""
-
-    access_rights: Mapped[str] = orm.mapped_column(sa.String(400))
-    """Access right set allocated to user access token."""
-
-    def asdict(self) -> dict[str, Any]:
-        """Transform object to a dict.
-
-        Returns:
-            dict[str, Any]: Resulting dict.
-        """
-        exclude = {'user'}
-        return {
-            field.name: getattr(self, field.name)
-            for field in dataclasses.fields(self)
-            if field.name not in exclude
-        }
 
 
 class UserProgress(ModelBaseType):

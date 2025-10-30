@@ -55,7 +55,7 @@ class MainMenuState(State):
         with session.begin():
             user = message.user
         self._logger.info('Starting for user %d', user.id)
-        yield self.show_keyboard(message)
+        yield self.show_keyboard()
         yield ResponseFactory.select_menu()
 
     @override
@@ -68,7 +68,7 @@ class MainMenuState(State):
             user = message.user
         text = message.text
         self._logger.info('User %d selected in main menu: %r', user.id, text)
-        yield self.show_keyboard(message)
+        yield self.show_keyboard()
 
         if not self.is_command_accepted(message):
             yield from self.unknown_command(session, message)
@@ -80,9 +80,8 @@ class MainMenuState(State):
                 yield from self._manager.start_search(session, message)
 
             case MenuToken.PROFILE:
-                token = self.get_user_token(session, user.id)
                 yield ResponseFactory.your_profile(user)
-                yield from self.attach_profile_photos(user.id, token)
+                yield from self.attach_profile_photos(user.id)
                 yield from self.start(session, message)
 
             case MenuToken.FAVORITE:

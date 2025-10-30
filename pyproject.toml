@@ -16,13 +16,10 @@ license = "MIT"
 requires-python = ">= 3.12"
 dependencies = [
     "coloredlogs>=15.0.1",
-    "flask>=3.1.2",
-    "pkce>=1.0.3",
     "psycopg2-binary>=2.9.11",
     "pydantic>=2.11.10",
     "pydantic-settings>=2.11.0",
     "pygments>=2.19.2",
-    "requests>=2.32.5",
     "sqlalchemy>=2.0.43",
     "vk-api>=11.10.0",
 ]

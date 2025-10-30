@@ -22,7 +22,6 @@ from vkinder.shared_types import UserSearchQuery
 from vkinder.shared_types import UserSortOrder
 
 from .profile_provider import ProfileProviderError
-from .profile_provider import ProfileProviderTokenError
 from .state import State
 
 SEARCH_AGE_MAX_GAP = 1
@@ -90,14 +89,7 @@ class SearchingState(State):
             user = message.user
             user_id = user.id
         self._logger.info('Starting for user %d', user_id)
-        yield self.show_keyboard(message)
-
-        # Check user authorization
-        token = self.get_user_token(session, user_id)
-        if token is None:
-            # Request authorization from user
-            yield from self._manager.start_auth(session, message)
-            return
+        yield self.show_keyboard()
 
         # Try to calculate user search criteria
         query = self._get_search_query(user)
@@ -108,14 +100,7 @@ class SearchingState(State):
 
         # Everything is OK, try to search
         try:
-            yield from self._search(session, message, token, query)
-        except ProfileProviderTokenError:
-            # Problem with the token
-            if self.get_user_token(session, user_id) is None:
-                yield from self._manager.start_auth(session, message)
-            else:
-                yield ResponseFactory.search_error()
-            return
+            yield from self._search(session, message, query)
         except ProfileProviderError:
             yield ResponseFactory.search_error()
             yield from self._manager.start_main_menu(session, message)
@@ -131,7 +116,7 @@ class SearchingState(State):
             user = message.user
         text = message.text
         self._logger.info('User %d selected in search menu: %r', user.id, text)
-        yield self.show_keyboard(message)
+        yield self.show_keyboard()
 
         if not self.is_command_accepted(message):
             yield from self.unknown_command(session, message)
@@ -206,7 +191,6 @@ class SearchingState(State):
         self,
         session: DatabaseSession,
         message: InputMessage,
-        token: str,
         query: UserSearchQuery,
     ) -> Iterator[Response]:
         """Performs user search and shows result to user.
@@ -214,14 +198,13 @@ class SearchingState(State):
         Args:
             session (DatabaseSession): Session object.
             message (InputMessage): A message from user.
-            token (str): User access token.
             query (UserSearchQuery): User search query object.
 
         Yields:
             Iterator[Response]: Bot responses to the user.
         """
         user_id = message.user.id
-        profiles = self._get_search_results(user_id, token, query)
+        profiles = self._get_search_results(user_id, query)
 
         # Ensure only unique profiles are present
         old_count = len(profiles)
@@ -263,7 +246,7 @@ class SearchingState(State):
             except ModelError:
                 self._logger.warning('Failed to save last found profile')
             yield ResponseFactory.search_result(profile)
-            yield from self.attach_profile_photos(profile.id, token)
+            yield from self.attach_profile_photos(profile.id)
         else:
             self._logger.warning('No profiles found for user %d', user_id)
             yield ResponseFactory.search_failed()
@@ -272,14 +255,12 @@ class SearchingState(State):
     def _get_search_results(
         self,
         user_id: int,
-        token: str,
         query: UserSearchQuery,
     ) -> list[int]:
         """Performs an actual search query and returns search results.
 
         Args:
             user_id (int): Bot user id.
-            token (str): User access token.
             query (UserSearchQuery): User search query object.
 
         Returns:
@@ -292,12 +273,12 @@ class SearchingState(State):
 
         # Find most relevant people
         query.sort = UserSortOrder.RELEVANT
-        profiles.extend(self.profile_provider.search_users(query, token))
+        profiles.extend(self.profile_provider.search_users(query))
         self._logger.debug('%d profiles for user %d', len(profiles), user_id)
 
         # Find newest accounts that satisfy search query
         query.sort = UserSortOrder.NEWEST
-        profiles.extend(self.profile_provider.search_users(query, token))
+        profiles.extend(self.profile_provider.search_users(query))
         self._logger.debug('%d profiles for user %d', len(profiles), user_id)
 
         return profiles

@@ -18,7 +18,6 @@ from .types import Blacklist
 from .types import Favorite
 from .types import ModelBaseType
 from .types import User
-from .types import UserAuthData
 from .types import UserProgress
 from .types import UserState
 
@@ -164,101 +163,6 @@ class DatabaseSession:
                 raise me from e
             self._logger.info('New user: %d', user.id)
         return user
-
-    def get_auth_data(
-        self,
-        user_id: int,
-    ) -> UserAuthData | None:
-        """For given user return theirs authorization data.
-
-        Args:
-            user_id (int): User id.
-
-        Returns:
-            UserAuthData | None: Authorization data if any.
-
-        Raises:
-            ModelError: Model operational error.
-        """
-        self._logger.debug('Extracting auth data for %r', user_id)
-        try:
-            stmt = sa.select(UserAuthData).where(
-                UserAuthData.user_id == user_id,
-            )
-            auth_data = self._session.scalar(stmt)
-        except exc.SQLAlchemyError as e:
-            me = _create_db_error(e)
-            self._logger.error('Getting auth data for %r: %s', user_id, e)
-            raise me from e
-
-        if auth_data is not None:
-            self._logger.debug('Extracted auth data for %d', user_id)
-        else:
-            self._logger.debug('No auth data for %d', user_id)
-        return auth_data
-
-    def save_auth_data(self, auth_data: UserAuthData) -> UserAuthData:
-        """Updates an authorization data for user or adds if missing in DB.
-
-        Input object could be modified in-place to respect current DB state.
-
-        Args:
-            auth_data (AuthData): User authorization data.
-
-        Returns:
-            UserAuthData: Auth data object now associated with session.
-
-        Raises:
-            DatabaseError: DB operational error.
-        """
-        # See if we have this user in the model
-        if self.get_auth_data(auth_data.user_id) is not None:
-            try:
-                auth_data = self._session.merge(auth_data)
-            except exc.SQLAlchemyError as e:
-                me = _create_db_error(e)
-                self._logger.error(
-                    'Updating auth data for %d: %s',
-                    auth_data.user_id,
-                    e,
-                )
-                raise me from e
-            self._logger.debug('Updated auth data for %d', auth_data.user_id)
-        else:
-            try:
-                self._session.add(auth_data)
-            except exc.SQLAlchemyError as e:
-                me = _create_db_error(e)
-                self._logger.error(
-                    'Adding auth data for %d: %s',
-                    auth_data.user_id,
-                    e,
-                )
-                raise me from e
-            self._logger.info('New auth data for %d', auth_data.user_id)
-        return auth_data
-
-    def delete_auth_data(self, user_id: int) -> None:
-        """For given user delete theirs authorization data.
-
-        Args:
-            user_id (int): User id.
-
-        Raises:
-            DatabaseError: DB operational error.
-        """
-        self._logger.debug('Deleting auth data for %d', user_id)
-        try:
-            stmt = sa.delete(UserAuthData).where(
-                UserAuthData.user_id == user_id
-            )
-            self._session.execute(stmt)
-        except exc.SQLAlchemyError as e:
-            me = _create_db_error(e)
-            self._logger.error('Deleting auth data for %d: %s', user_id, e)
-            raise me from e
-
-        self._logger.debug('Deleted auth data for %d', user_id)
 
     def favorite_exists(self, user_id: int, profile_id: int) -> bool:
         """Checks whether the DB contains favorite record with profile id.

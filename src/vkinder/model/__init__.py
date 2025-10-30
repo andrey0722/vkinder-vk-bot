@@ -5,10 +5,6 @@ from .db import DatabaseSession
 from .exceptions import ModelError
 from .log import configure_orm_logger
 from .log import configure_root_logger
-from .states import AuthProvider
-from .states import AuthProviderError
-from .states import AuthProviderRefreshError
-from .states import AuthRecord
 from .states import ProfileProvider
 from .states import ProfileProviderError
 from .states import ProfileProviderTokenError
@@ -21,10 +17,6 @@ from .types import UserState
 __all__ = (
     'User',
     'UserState',
-    'AuthProvider',
-    'AuthProviderError',
-    'AuthProviderRefreshError',
-    'AuthRecord',
     'ProfileProvider',
     'ProfileProviderError',
     'ProfileProviderTokenError',

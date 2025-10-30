@@ -8,8 +8,6 @@ from vkinder.shared_types import InputMessage
 from vkinder.shared_types import Response
 from vkinder.shared_types import UserState
 
-from .auth import AuthState
-from .auth_provider import AuthProvider
 from .blacklist import BlacklistState
 from .favorite_list import FavoriteListState
 from .main_menu import MainMenuState
@@ -24,24 +22,17 @@ if TYPE_CHECKING:
 class StateManager:
     """Controls controller state transition for users."""
 
-    def __init__(
-        self,
-        profile_provider: ProfileProvider,
-        auth_provider: AuthProvider,
-    ) -> None:
+    def __init__(self, profile_provider: ProfileProvider) -> None:
         """Initialize state manager object.
 
         Args:
             profile_provider (ProfileProvider): Profile provider object.
-            auth_provider (AuthProvider): Authorization provider object.
         """
         self._profile_provider = profile_provider
-        self._auth_provider = auth_provider
         self._states: dict[UserState, State] = {
             UserState.NEW_USER: NewUserState(self),
             UserState.MAIN_MENU: MainMenuState(self),
             UserState.SEARCHING: SearchingState(self),
-            UserState.AUTH: AuthState(self),
             UserState.FAVORITE_LIST: FavoriteListState(self),
             UserState.BLACKLIST: BlacklistState(self),
         }
@@ -54,15 +45,6 @@ class StateManager:
             ProfileProvider: Profile provider object.
         """
         return self._profile_provider
-
-    @property
-    def auth_provider(self) -> AuthProvider:
-        """Returns authorization provider object.
-
-        Returns:
-            AuthProvider: Authorization provider object.
-        """
-        return self._auth_provider
 
     def get_state(self, user_state: UserState) -> 'State':
         """Retrieves state object for given user state.
@@ -129,22 +111,6 @@ class StateManager:
             Iterator[Response]: Bot responses to the user.
         """
         yield from self.start(session, message, UserState.SEARCHING)
-
-    def start_auth(
-        self,
-        session: DatabaseSession,
-        message: InputMessage,
-    ) -> Iterator[Response]:
-        """Convenience method to start auth state.
-
-        Args:
-            session (DatabaseSession): Session object.
-            message (InputMessage): A message from user.
-
-        Returns:
-            Iterator[Response]: Bot responses to the user.
-        """
-        yield from self.start(session, message, UserState.AUTH)
 
     def respond(
         self,

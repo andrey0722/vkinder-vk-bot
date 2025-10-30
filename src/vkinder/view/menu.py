@@ -22,8 +22,6 @@ STR_TO_MENU_TOKEN: Final[dict[MenuTokenStr, MenuToken]] = {
     MenuTokenStr.ADD_FAVORITE: MenuToken.ADD_FAVORITE,
     MenuTokenStr.ADD_BLACKLIST: MenuToken.ADD_BLACKLIST,
     MenuTokenStr.GO_BACK: MenuToken.GO_BACK,
-    MenuTokenStr.AUTH_BEGIN: MenuToken.AUTH_BEGIN,
-    MenuTokenStr.AUTH_FINISHED: MenuToken.AUTH_FINISHED,
 }
 
 MENU_TOKEN_TO_STR: Final[dict[MenuToken, MenuTokenStr]] = {

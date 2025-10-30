@@ -9,7 +9,6 @@ from vkinder.model.types import Blacklist
 from vkinder.model.types import Favorite
 from vkinder.model.types import Sex
 from vkinder.model.types import User
-from vkinder.model.types import UserAuthData
 from vkinder.model.types import UserProgress
 from vkinder.model.types import UserState
 
@@ -18,7 +17,6 @@ __all__ = (
     'Favorite',
     'Sex',
     'User',
-    'UserAuthData',
     'UserSearchQuery',
     'UserState',
     'MenuToken',
@@ -49,8 +47,6 @@ class MenuToken(enum.StrEnum):
     DELETE_BLACKLIST = enum.auto()
     ADD_BLACKLIST = enum.auto()
     GO_BACK = enum.auto()
-    AUTH_BEGIN = enum.auto()
-    AUTH_FINISHED = enum.auto()
 
 
 class MediaType(enum.StrEnum):
@@ -199,12 +195,6 @@ class ResponseType(enum.IntEnum):
     SEARCH_RESULT = enum.auto()
     """Show found profile to the user."""
 
-    AUTH_REQUIRED = enum.auto()
-    """Authorization required to continue with current operation."""
-
-    AUTH_NOT_COMPLETED = enum.auto()
-    """Authorization hasn't been completed by user."""
-
     ADDED_TO_FAVORITE = enum.auto()
     """Added last found profile to user's favorite list."""
 
@@ -259,8 +249,6 @@ type ResponseTypesGeneric = Literal[
     ResponseType.USER_BIRTHDAY_MISSING,
     ResponseType.SEARCH_FAILED,
     ResponseType.SEARCH_ERROR,
-    ResponseType.AUTH_REQUIRED,
-    ResponseType.AUTH_NOT_COMPLETED,
     ResponseType.ADDED_TO_FAVORITE,
     ResponseType.ADD_TO_FAVORITE_FAILED,
     ResponseType.FAVORITE_LIST_FAILED,
@@ -555,38 +543,6 @@ class ResponseFactory:
         """
         return ResponseGeneric(
             type=ResponseType.SEARCH_ERROR,
-            allow_squash=allow_squash,
-        )
-
-    @staticmethod
-    def auth_required(*, allow_squash: bool = True) -> Response:
-        """Authorization required to continue with current operation.
-
-        Args:
-            allow_squash (bool, optional): Allow response message to be
-                squashed with others. Defaults to True.
-
-        Returns:
-            Response: Bot response to user.
-        """
-        return ResponseGeneric(
-            type=ResponseType.AUTH_REQUIRED,
-            allow_squash=allow_squash,
-        )
-
-    @staticmethod
-    def auth_not_completed(*, allow_squash: bool = True) -> Response:
-        """Authorization hasn't been completed by user.
-
-        Args:
-            allow_squash (bool, optional): Allow response message to be
-                squashed with others. Defaults to True.
-
-        Returns:
-            Response: Bot response to user.
-        """
-        return ResponseGeneric(
-            type=ResponseType.AUTH_NOT_COMPLETED,
             allow_squash=allow_squash,
         )
 

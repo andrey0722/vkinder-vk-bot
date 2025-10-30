@@ -13,7 +13,6 @@ from vkinder.shared_types import MenuToken
 from vkinder.shared_types import Response
 from vkinder.shared_types import ResponseFactory
 from vkinder.shared_types import TextButton
-from vkinder.shared_types import UserState
 
 from .profile_provider import ProfileProviderError
 from .state import State
@@ -57,18 +56,9 @@ class BlacklistState(State):
         session: DatabaseSession,
         message: InputMessage,
     ) -> Iterator[Response]:
-        with session.begin():
-            user = message.user
-            progress = message.progress
-            if progress.last_state == UserState.AUTH:
-                # Restore state from before auth
-                index = progress.last_blacklist_index
-            else:
-                index = 0
-
-        self._logger.info('Starting for user %d', user.id)
-        yield self.show_keyboard(message)
-        yield from self._show(session, message, index)
+        self._logger.info('Starting for user %d', message.user.id)
+        yield self.show_keyboard()
+        yield from self._show(session, message, 0)
 
     @override
     def respond(
@@ -87,7 +77,7 @@ class BlacklistState(State):
             user.id,
             text,
         )
-        yield self.show_keyboard(message)
+        yield self.show_keyboard()
 
         if not self.is_command_accepted(message):
             yield from self.unknown_command(session, message)
@@ -238,12 +228,5 @@ class BlacklistState(State):
             progress.last_blacklist_index = index
             progress.last_blacklist_id = profile_id
 
-        # Check user authorization
-        token = self.get_user_token(session, user.id)
-        if token is None:
-            # Request authorization from user
-            yield from self._manager.start_auth(session, message)
-            return
-
         yield ResponseFactory.blacklist_result(profile, index + 1, count)
-        yield from self.attach_profile_photos(profile_id, token)
+        yield from self.attach_profile_photos(profile_id)

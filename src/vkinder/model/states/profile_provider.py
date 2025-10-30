@@ -22,25 +22,6 @@ class ProfileProvider(Protocol):
     """Provides means to get profile info."""
 
     @abc.abstractmethod
-    def get_user_access_rights(self) -> str:
-        """Returns required access right set for user account.
-
-        Returns:
-            str: Access right set.
-        """
-
-    @abc.abstractmethod
-    def validate_access_token(self, access_token: str | None) -> bool:
-        """Tests if provided user access token is valid for API calls.
-
-        Args:
-            access_token (str | None): User access token.
-
-        Returns:
-            bool: `True` if valid, otherwise `False`.
-        """
-
-    @abc.abstractmethod
     def get_user_profile(self, user_id: int) -> User:
         """Extract user profile by their profile id.
 
@@ -62,7 +43,6 @@ class ProfileProvider(Protocol):
         *,
         sort_by_likes: bool = False,
         limit: int | None = None,
-        access_token: str | None = None,
     ) -> list[Photo]:
         """Extracts user profile photos with optional sorting.
 
@@ -72,8 +52,6 @@ class ProfileProvider(Protocol):
                 descending order. Defaults to `False`.
             limit (int | None, optional): Limit result up to `limit`
                 photos if specified. Defaults to `None`.
-            access_token (str | None, optional): User access token for
-                API call. Defaults to None.
 
         Raises:
             ProfileProviderTokenError: Access token is invalid.
@@ -84,17 +62,11 @@ class ProfileProvider(Protocol):
         """
 
     @abc.abstractmethod
-    def search_users(
-        self,
-        query: UserSearchQuery,
-        access_token: str | None = None,
-    ) -> Iterator[int]:
+    def search_users(self, query: UserSearchQuery) -> Iterator[int]:
         """Perform user search using specified search query.
 
         Args:
             query (UserSearchQuery): Search query object.
-            access_token (str | None, optional): User access token for
-                API call. Defaults to None.
 
         Raises:
             ProfileProviderTokenError: Access token is invalid.

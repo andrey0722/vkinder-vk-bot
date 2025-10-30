@@ -189,8 +189,6 @@ _GENERIC_TO_TEXT: Final[dict[ResponseTypesGeneric, str]] = {
     ResponseType.USER_BIRTHDAY_MISSING: Strings.USER_BIRTHDAY_MISSING,
     ResponseType.SEARCH_FAILED: Strings.SEARCH_FAILED,
     ResponseType.SEARCH_ERROR: Strings.SEARCH_ERROR,
-    ResponseType.AUTH_REQUIRED: Strings.AUTH_REQUIRED,
-    ResponseType.AUTH_NOT_COMPLETED: Strings.AUTH_NOT_COMPLETED,
     ResponseType.ADDED_TO_FAVORITE: Strings.ADDED_TO_FAVORITE,
     ResponseType.ADD_TO_FAVORITE_FAILED: Strings.ADD_TO_FAVORITE_FAILED,
     ResponseType.FAVORITE_LIST_FAILED: Strings.FAVORITE_LIST_FAILED,
