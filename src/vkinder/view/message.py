@@ -182,6 +182,7 @@ def render_response(response: Response, user: User) -> OutputMessage:
 
 
 _GENERIC_TO_TEXT: Final[dict[ResponseTypesGeneric, str]] = {
+    ResponseType.BOT_ERROR: Strings.BOT_ERROR,
     ResponseType.UNKNOWN_COMMAND: Strings.UNKNOWN_COMMAND,
     ResponseType.SELECT_MENU: Strings.SELECT_ACTION,
     ResponseType.USER_SEX_MISSING: Strings.USER_SEX_MISSING,

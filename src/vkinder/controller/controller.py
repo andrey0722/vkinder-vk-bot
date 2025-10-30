@@ -8,12 +8,13 @@ from vkinder.config import VkConfig
 from vkinder.log import get_logger
 from vkinder.model import Database
 from vkinder.model import DatabaseSession
-from vkinder.model import ModelError
 from vkinder.model import StateManager
 from vkinder.shared_types import InputMessage
 from vkinder.shared_types import Response
+from vkinder.shared_types import ResponseFactory
 from vkinder.view import normalize_menu_command
 from vkinder.view import render_messages
+from vkinder.view import render_response
 from vkinder.view.strings import Command
 
 from .vk_service import Event
@@ -60,7 +61,7 @@ class Controller:
             for message in self._vk.check_messages():
                 try:
                     self.handle_message(message)
-                except (ModelError, VkServiceError):
+                except Exception:
                     self._logger.error(
                         'Failed to handle message from %d',
                         message.user_id,
@@ -82,19 +83,25 @@ class Controller:
         with self._db.create_session() as session:
             message = self._event_to_message(session, event)
 
-            # Sequence of messages from the state machine
-            responses = handler(session, message)
+            try:
+                # Sequence of messages from the state machine
+                responses = handler(session, message)
 
-            # Squash all messages from handler to small number of messages
-            messages = render_messages(message.user, responses)
-            for message in messages:
-                try:
-                    vk.send(message)
-                except VkServiceError:
-                    self._logger.error(
-                        'Error when sending message to user %d',
-                        user_id,
-                    )
+                # Squash all messages from handler to small number of messages
+                messages = render_messages(message.user, responses)
+                for message in messages:
+                    try:
+                        vk.send(message)
+                    except VkServiceError:
+                        self._logger.error(
+                            'Error when sending message to user %d',
+                            user_id,
+                        )
+            except:
+                user = message.user
+                message = render_response(ResponseFactory.bot_error(), user)
+                self._vk.send(message)
+                raise
 
     def _get_command_handler(self, text: str) -> MessageHandler:
         text = text.lower().strip()

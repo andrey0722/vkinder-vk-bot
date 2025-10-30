@@ -165,6 +165,9 @@ class UserSearchQuery:
 class ResponseType(enum.IntEnum):
     """Defines bot response type and its parameter set."""
 
+    BOT_ERROR = enum.auto()
+    """The bot encountered an unrecoverable error."""
+
     UNKNOWN_COMMAND = enum.auto()
     """The user has input an invalid command."""
 
@@ -242,6 +245,7 @@ class ResponseType(enum.IntEnum):
 
 
 type ResponseTypesGeneric = Literal[
+    ResponseType.BOT_ERROR,
     ResponseType.UNKNOWN_COMMAND,
     ResponseType.SELECT_MENU,
     ResponseType.USER_SEX_MISSING,
@@ -393,6 +397,22 @@ type Response = (
 
 class ResponseFactory:
     """Contains factory functions for all responses."""
+
+    @staticmethod
+    def bot_error(*, allow_squash: bool = True) -> Response:
+        """The bot encountered an unrecoverable error.
+
+        Args:
+            allow_squash (bool, optional): Allow response message to be
+                squashed with others. Defaults to True.
+
+        Returns:
+            Response: Bot response to user.
+        """
+        return ResponseGeneric(
+            type=ResponseType.BOT_ERROR,
+            allow_squash=allow_squash,
+        )
 
     @staticmethod
     def unknown_command(*, allow_squash: bool = True) -> Response:

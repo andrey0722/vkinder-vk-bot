@@ -50,6 +50,7 @@ class Strings(enum.StrEnum):
     """Messages from the bot to a user."""
 
     GREETING_NEW_USER = '🎉🎉🎉 Добро пожаловать, {name}! 🎉🎉🎉'
+    BOT_ERROR = '💀💀💀 Ошибка работы бота 💀💀💀'
     UNKNOWN_COMMAND = f'Не понял команду. Нажми {MenuTokenStr.HELP}'
     SELECT_ACTION = 'Выбери действие:'
     USER_SEX_MISSING = (
