@@ -2,6 +2,8 @@
 
 from collections.abc import Iterator
 import copy
+import dataclasses
+import datetime
 import random
 from typing import ClassVar, Final, override
 
@@ -47,6 +49,20 @@ FILTER_ONLINE: bool | None = True
 
 FILTER_HAS_PHOTO: bool | None = True
 """Filer users by photo availability. If `None` then no filtering."""
+
+
+@dataclasses.dataclass
+class SearchCacheRecord:
+    """Stores user search results for `CACHE_EXPIRE_DELAY` time period."""
+
+    profiles: list[int]
+    """Cached search result."""
+
+    expire_time: datetime.datetime
+    """Time point after which this record must be invalidated."""
+
+    CACHE_EXPIRE_DELAY: ClassVar = datetime.timedelta(minutes=5)
+    """Time period of every record lifetime."""
 
 
 class SearchingState(State):
@@ -229,14 +245,27 @@ class SearchingState(State):
         )
 
         if profiles:
-            profile_id = random.choice(profiles)
+            random.shuffle(profiles)
+            for profile_id in profiles:
+                profile = self.profile_provider.get_user_profile(profile_id)
+                # When storing search results in cache they could become
+                # irrelevant. Let's extract the first relevant profile.
+                if self._is_profile_relevant(profile, query):
+                    break
+            else:
+                # No relevant profiles
+                profile = None
+        else:
+            # No profiles found at all
+            profile = None
+
+        if profile:
+            profile_id = profile.id
             self._logger.info(
                 'Selected profile %d for user %d',
                 profile_id,
                 user_id,
             )
-
-            profile = self.profile_provider.get_user_profile(profile_id)
 
             # Save profile id to be able to add it to favorite list
             try:
@@ -253,6 +282,130 @@ class SearchingState(State):
             yield from self._manager.start_main_menu(session, message)
 
     def _get_search_results(
+        self,
+        user_id: int,
+        query: UserSearchQuery,
+    ) -> list[int]:
+        """Extracts search results from cache or performs new search.
+
+        Args:
+            user_id (int): Bot user id.
+            query (UserSearchQuery): User search query object.
+
+        Returns:
+            list[int]: Profile ids extracted.
+        """
+        if record := self._get_cache_record(user_id):
+            # Use cached results
+            return record.profiles
+
+        # Perform new search
+        profiles = self._request_new_search_results(user_id, query)
+        self._save_to_cache(user_id, profiles)
+        return profiles
+
+    @property
+    def _search_cache(self) -> dict[int, SearchCacheRecord]:
+        """Returns search cache dictionary.
+
+        Returns:
+            dict[int, SearchCacheRecord]: Search cache dictionary.
+        """
+        try:
+            return self._search_cache_dict
+        except AttributeError:
+            self._search_cache_dict = {}
+        return self._search_cache_dict
+
+    def _get_cache_record(self, user_id: int) -> SearchCacheRecord | None:
+        """Extracts search cache record for user.
+
+        Args:
+            user_id (int): User id.
+
+        Returns:
+            SearchCacheRecord | None: Search cache record if any.
+        """
+        try:
+            record = self._search_cache[user_id]
+        except KeyError:
+            self._logger.debug('No cache for user %d', user_id)
+            return None
+
+        if self._now() >= record.expire_time:
+            self._logger.debug('Cache for user %d has expired', user_id)
+            del self._search_cache[user_id]
+            return None
+
+        self._logger.debug('Extracted cache for user %d', user_id)
+        return record
+
+    def _save_to_cache(self, user_id: int, profiles: list[int]) -> None:
+        """Adds or updates search cache record for user.
+
+        Args:
+            user_id (int): User id.
+            profiles (list[int]): Search result to cache.
+        """
+        self._search_cache[user_id] = SearchCacheRecord(
+            profiles=profiles,
+            expire_time=self._now() + SearchCacheRecord.CACHE_EXPIRE_DELAY,
+        )
+
+    @staticmethod
+    def _now() -> datetime.datetime:
+        """Convenience method to return current time.
+
+        Returns:
+            datetime.datetime: Current time.
+        """
+        return datetime.datetime.now(tz=datetime.UTC)
+
+    def _is_profile_relevant(
+        self,
+        profile: User,
+        query: UserSearchQuery,
+    ) -> bool:
+        """Tests if found profile satisfies actual search query.
+
+        Args:
+            profile (User): FOund profile object.
+            query (UserSearchQuery): Search query to validate against.
+
+        Returns:
+            bool: `True` if `profile` satisfies `query`, otherwise `False`.
+        """
+        profile_id = profile.id
+
+        online = query.online
+        if online is not None and profile.online != online:
+            self._logger.debug('Profile %d: bad online value', profile_id)
+            return False
+
+        city_id = query.city_id
+        if city_id is not None and profile.city_id != city_id:
+            self._logger.debug('Profile %d: bad city', profile_id)
+            return False
+
+        sex = query.sex
+        if sex is not None and profile.sex != sex:
+            self._logger.debug('Profile %d: bad sex', profile_id)
+            return False
+
+        profile_age = profile.age
+        if profile_age is not None:
+            age_min = query.age_min
+            if age_min is not None and profile_age < age_min:
+                self._logger.debug('Profile %d: age below minimum', profile_id)
+                return False
+            age_max = query.age_max
+            if age_max is not None and profile_age > age_max:
+                self._logger.debug('Profile %d: age above maximum', profile_id)
+                return False
+
+        return True
+
+    def _request_new_search_results(
         self,
         user_id: int,
         query: UserSearchQuery,
